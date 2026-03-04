@@ -80,6 +80,8 @@ namespace JourneyGator.Player
             Controller.OnLandedEvent += HandleLanded;
             Controller.OnLeftGroundEvent += HandleLeftGround;
             Controller.OnStateChanged += HandleStateChanged;
+            Controller.OnJumpedEvent += HandleJumped;
+           
         }
 
         private void UnsubscribeFromEvents()
@@ -91,6 +93,8 @@ namespace JourneyGator.Player
             Controller.OnLandedEvent -= HandleLanded;
             Controller.OnLeftGroundEvent -= HandleLeftGround;
             Controller.OnStateChanged -= HandleStateChanged;
+            Controller.OnJumpedEvent -= HandleJumped;
+          
         }
 
         // ─── Public API ──────────────────────────────────────────────────────
@@ -131,6 +135,7 @@ namespace JourneyGator.Player
         private void HandleLanded()
         {
             // e.g. LandingDustVFX?.Play();
+            SoundManager.Instance.Play("land");
         }
 
         private void HandleLeftGround()
@@ -142,6 +147,8 @@ namespace JourneyGator.Player
         {
             // e.g. swap animator layers when entering Carrying state
         }
+
+        private void HandleJumped() => SoundManager.Instance.Play("jump");
 
         // ─── Private Updaters ────────────────────────────────────────────────
 

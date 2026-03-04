@@ -153,8 +153,8 @@ Material:
     - _RampBandsSmoothing: 0.1
     - _RampOffset: 0
     - _RampScale: 1
-    - _RampSmoothing: 0.8
-    - _RampThreshold: 0.533
+    - _RampSmoothing: 0.62
+    - _RampThreshold: 0.537
     - _RampType: 2
     - _ReceiveShadows: 1
     - _ReceiveShadowsOff: 1

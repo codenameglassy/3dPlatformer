@@ -131,6 +131,9 @@ namespace JourneyGator.Player
         /// <summary>Fired when sprint starts (true) or stops (false).</summary>
         public event Action<bool> OnSprintChanged;
 
+        /// <summary>Fired the frame the character executes a jump (first or double).</summary>
+        public event Action OnJumpedEvent;
+
         // ─── Constants ───────────────────────────────────────────────────────
 
         private const float TiltSmoothingScale = 15f;
@@ -545,6 +548,7 @@ namespace JourneyGator.Player
                 _jumpRequested = false;
                 _jumpConsumed = true;
                 _jumpedThisFrame = true;
+                OnJumpedEvent?.Invoke();
                 return;
             }
 
@@ -559,6 +563,7 @@ namespace JourneyGator.Player
                 _jumpRequested = false;
                 _doubleJumpConsumed = true;
                 _jumpedThisFrame = true;
+                OnJumpedEvent?.Invoke();
             }
         }
 
