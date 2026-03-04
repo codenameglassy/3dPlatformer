@@ -2902,6 +2902,37 @@ Transform:
     type: 3}
   m_PrefabInstance: {fileID: 1220265125}
   m_PrefabAsset: {fileID: 0}
+--- !u!1 &251149204
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 251149205}
+  m_Layer: 0
+  m_Name: "\u2015\u2015\u2015\u2015\u2015\u2015 Separator \u2015\u2015\u2015\u2015\u2015\u2015"
+  m_TagString: EditorOnly
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &251149205
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 251149204}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!4 &251333217 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 460346, guid: 0a1fddb53966d524f8563c149d554f26,
@@ -7462,7 +7493,7 @@ GameObject:
   - component: {fileID: 733305433}
   - component: {fileID: 733305434}
   m_Layer: 0
-  m_Name: Player
+  m_Name: PlayerInputHandler
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -21412,7 +21443,7 @@ GameObject:
   - component: {fileID: 6177337247759488267}
   - component: {fileID: 6177337247759488268}
   m_Layer: 0
-  m_Name: PlayerCharacter
+  m_Name: PlayerCharacterController
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -21542,14 +21573,14 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1398904083514551}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0.7071068, z: 0, w: 0.70710677}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 899.31555, y: 28, z: 240.22797}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 1527237891}
   m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 90.00001, z: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!4 &4903609669779785
 Transform:
   m_ObjectHideFlags: 0
@@ -21932,6 +21963,15 @@ MonoBehaviour:
   JumpPostGroundingGraceTime: 0
   AllowDoubleJump: 1
   DoubleJumpUpSpeed: 15
+  AllowGliding: 1
+  GlideGravityScale: 0.15
+  GlideMaxFallSpeed: 2
+  GlideHorizontalSpeed: 22
+  GlideEntryMinAirTime: 0.1
+  MaxBankAngle: 30
+  MaxPitchAngle: 20
+  TiltSmoothing: 0.5
+  TiltRecoverySpeed: 1.5
   CrouchedCapsuleHeight: 1
   StandingCapsuleHeight: 2
   StandingCapsuleRadius: 0.5
@@ -21948,7 +21988,6 @@ SceneRoots:
   - {fileID: 832575519}
   - {fileID: 274750798}
   - {fileID: 2134733225}
-  - {fileID: 172297586}
   - {fileID: 1213392713}
   - {fileID: 760010108}
   - {fileID: 1146272020}
@@ -21970,3 +22009,5 @@ SceneRoots:
   - {fileID: 4898695388629157}
   - {fileID: 4353898187413049}
   - {fileID: 733305433}
+  - {fileID: 172297586}
+  - {fileID: 251149205}

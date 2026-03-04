@@ -84,8 +84,8 @@ namespace JourneyGator.Player
 
             CharacterCamera.UpdateWithInput(Time.deltaTime, scrollInput, lookInputVector);
 
-            // Right-click toggles first-person / third-person zoom
-            if (Input.GetMouseButtonDown(1))
+            // Middle-mouse toggles first-person / third-person zoom (right-click is reserved for Glide)
+            if (Input.GetMouseButtonDown(2))
             {
                 CharacterCamera.TargetDistance =
                     (CharacterCamera.TargetDistance == 0f) ? CharacterCamera.DefaultDistance : 0f;
@@ -100,7 +100,7 @@ namespace JourneyGator.Player
                 MoveAxisRight = Input.GetAxisRaw(HorizontalInput),
                 CameraRotation = CharacterCamera.Transform.rotation,
                 JumpDown = Input.GetKeyDown(KeyCode.Space),
-                JumpHeld = Input.GetKey(KeyCode.Space),       // Hold Space to glide
+                GlideHeld = Input.GetMouseButton(1),             // Hold right-click to glide
                 CrouchDown = Input.GetKeyDown(KeyCode.C),
                 CrouchUp = Input.GetKeyUp(KeyCode.C),
             };

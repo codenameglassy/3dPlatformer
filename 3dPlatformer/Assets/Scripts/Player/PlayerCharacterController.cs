@@ -34,7 +34,7 @@ namespace JourneyGator.Player
         public float MoveAxisRight;
         public Quaternion CameraRotation;
         public bool JumpDown;
-        public bool JumpHeld;   // Hold to glide
+        public bool GlideHeld;  // Hold right-click to glide
         public bool CrouchDown;
         public bool CrouchUp;
     }
@@ -93,7 +93,8 @@ namespace JourneyGator.Player
         [Header("Glide Tilt")]
         public float MaxBankAngle = 30f;   // Max left/right roll when turning (degrees)
         public float MaxPitchAngle = 20f;   // Max forward pitch at full speed (degrees)
-        public float TiltSmoothing = 8f;    // How snappy the tilt lerps in/out
+        [Range(0f, 1f)] public float TiltSmoothing = 0.8f;  // How snappy the tilt lerps IN while gliding
+        [Range(0f, 2f)] public float TiltRecoverySpeed = 0.2f;  // How fast tilt returns to neutral after glide ends
         [Header("Crouching")]
         public float CrouchedCapsuleHeight = 1f;
         public float StandingCapsuleHeight = 2f;
@@ -129,7 +130,8 @@ namespace JourneyGator.Player
         private bool _isGliding = false;
         private bool _glideInputHeld = false;
 
-        private Quaternion _meshLocalRotation = Quaternion.identity; // Baseline local rotation of MeshRoot
+        private float _currentBank = 0f; // Smoothed bank angle, interpolated independently
+        private float _currentPitch = 0f; // Smoothed pitch angle, interpolated independently
 
         private bool _shouldBeCrouching = false;
         private bool _isCrouching = false;
@@ -215,7 +217,7 @@ namespace JourneyGator.Player
                             _jumpRequested = true;
                         }
 
-                        _glideInputHeld = inputs.JumpHeld;
+                        _glideInputHeld = inputs.GlideHeld;
                         HandleCrouchInput(inputs.CrouchDown, inputs.CrouchUp);
                         break;
                     }
@@ -639,10 +641,9 @@ namespace JourneyGator.Player
             if (_isGliding)
             {
                 // ── Bank (roll) ───────────────────────────────────────────────
-                // Use the lateral component of move input relative to character forward.
-                // Positive = turning right → bank right (negative roll in Unity convention).
+                // Lateral input in local space: -1 = turning left, +1 = turning right.
                 Vector3 localMove = Motor.Transform.InverseTransformDirection(_moveInputVector);
-                float lateralInput = localMove.x; // -1 left, +1 right
+                float lateralInput = localMove.x;
                 targetBank = -lateralInput * MaxBankAngle;
 
                 // ── Pitch ─────────────────────────────────────────────────────
@@ -652,15 +653,18 @@ namespace JourneyGator.Player
                 targetPitch = speedRatio * MaxPitchAngle;
             }
 
-            // Smoothly interpolate to target tilt, or back to neutral when not gliding
-            Quaternion targetRotation = Quaternion.Euler(targetPitch, 0f, targetBank);
-            _meshLocalRotation = Quaternion.Slerp(
-                _meshLocalRotation,
-                targetRotation,
-                1f - Mathf.Exp(-TiltSmoothing * deltaTime)
-            );
+            // Smooth the bank and pitch targets independently before composing the rotation.
+            // This prevents the target from jumping instantly when input changes direction,
+            // which is what was causing the tilt to feel abrupt despite the Slerp below.
+            // Use TiltSmoothing while gliding, TiltRecoverySpeed when returning to neutral
+            // Scale normalized slider values [0-1] and [0-2] to useful exp-smoothing ranges
+            float activeSpeed = _isGliding ? TiltSmoothing * 15f : TiltRecoverySpeed * 5f;
+            float smoothFactor = 1f - Mathf.Exp(-activeSpeed * deltaTime);
+            _currentBank = Mathf.Lerp(_currentBank, targetBank, smoothFactor);
+            _currentPitch = Mathf.Lerp(_currentPitch, targetPitch, smoothFactor);
 
-            MeshRoot.localRotation = _meshLocalRotation;
+            // Compose the final rotation and apply to MeshRoot — purely visual, no physics
+            MeshRoot.localRotation = Quaternion.Euler(_currentPitch, 0f, _currentBank);
         }
 
         // ─── Ground Event Callbacks ──────────────────────────────────────────
