@@ -58,6 +58,7 @@ namespace JourneyGator.Player
         public KinematicCharacterMotor Motor;
         public Transform MeshRoot;
         public Transform CameraFollowPoint;
+        public GameObject SpeedLinesVFX; // Assign the speed lines child on the camera
 
         [Header("Stable Movement")]
         public float MaxStableMoveSpeed = 10f;
@@ -420,7 +421,12 @@ namespace JourneyGator.Player
             bool pastEntryDelay = _timeSinceLastAbleToJump >= GlideEntryMinAirTime;
             bool wantsToGlide = AllowGliding && _glideInputHeld && isAirborne && pastEntryDelay;
 
-            _isGliding = wantsToGlide;
+            if (wantsToGlide != _isGliding)
+            {
+                _isGliding = wantsToGlide;
+                if (SpeedLinesVFX != null)
+                    SpeedLinesVFX.SetActive(_isGliding);
+            }
         }
 
         /// <summary>
