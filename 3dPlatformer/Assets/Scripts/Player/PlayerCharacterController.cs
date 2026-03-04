@@ -9,25 +9,15 @@ namespace JourneyGator.Player
 
     public enum CharacterState
     {
-        Default,
-        Carrying,       // Holding a litter item
-        Throwing,       // Locked into throw animation
-        Stunned,        // Temporarily unable to move
-        Interacting,    // Using a bin / station
+        Grounded,   // On stable ground — walking, sprinting, crouching
+        Air,        // Airborne — normal air movement, double jump, coyote time
+        Gliding,    // Gliding — reduced gravity, horizontal control, tilt
+        Floating,   // Mana-powered upward float
+        Stunned,    // No input, gravity + drag only
     }
 
-    public enum OrientationMethod
-    {
-        TowardsCamera,
-        TowardsMovement,
-    }
-
-    public enum BonusOrientationMethod
-    {
-        None,
-        TowardsGravity,
-        TowardsGroundSlopeAndGravity,
-    }
+    public enum OrientationMethod { TowardsCamera, TowardsMovement }
+    public enum BonusOrientationMethod { None, TowardsGravity, TowardsGroundSlopeAndGravity }
 
     public struct PlayerCharacterInputs
     {
@@ -35,9 +25,9 @@ namespace JourneyGator.Player
         public float MoveAxisRight;
         public Quaternion CameraRotation;
         public bool JumpDown;
-        public bool GlideHeld;    // Hold right-click to glide
-        public bool SprintHeld;   // Hold Left Shift to sprint
-        public bool FloatHeld;    // Hold F to float
+        public bool GlideHeld;   // RMB — glide in air
+        public bool SprintHeld;  // Left Shift — sprint on ground
+        public bool FloatHeld;   // F — float with mana
         public bool CrouchDown;
         public bool CrouchUp;
     }
@@ -48,15 +38,22 @@ namespace JourneyGator.Player
         public Vector3 LookVector;
     }
 
-    // ─── Main Controller ────────────────────────────────────────────────────
+    // ─── Controller ─────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Drives character movement via the KinematicCharacterMotor.
-    /// Fires events when movement states change — subscribe in PlayerVisuals or any observer.
-    /// Never references VFX, audio, or animation directly.
+    /// Thin shell. Holds inspector settings, events, and shared transient state.
+    /// ALL behaviour lives in state classes. This class only delegates.
+    ///
+    /// HOW TO ADD A NEW STATE:
+    ///   1. Add to CharacterState enum.
+    ///   2. Create a class extending PlayerStateBase.
+    ///   3. Register it in Awake() _states dictionary.
+    ///   4. Call TransitionToState() to activate it.
     /// </summary>
     public class PlayerCharacterController : MonoBehaviour, ICharacterController
     {
+        // ── Inspector ────────────────────────────────────────────────────────
+
         [Header("References")]
         public KinematicCharacterMotor Motor;
         public Transform MeshRoot;
@@ -90,8 +87,8 @@ namespace JourneyGator.Player
         public float GlideMaxFallSpeed = 2f;
         public float GlideHorizontalSpeed = 12f;
         public float GlideEntryMinAirTime = 0.1f;
-        public float GlideAcceleration = 4f;   // How fast horizontal speed ramps UP with input
-        public float GlideDeceleration = 3f;   // How fast player bleeds to float with no input
+        public float GlideAcceleration = 4f;
+        public float GlideDeceleration = 3f;
 
         [Header("Glide Tilt")]
         public float MaxBankAngle = 30f;
@@ -105,11 +102,11 @@ namespace JourneyGator.Player
 
         [Header("Floating")]
         public bool AllowFloating = true;
-        public float FloatLiftSpeed = 5f;    // Max upward speed while floating (m/s)
-        public float FloatUpAcceleration = 10f;   // How quickly lift speed is reached
+        public float FloatLiftSpeed = 5f;
+        public float FloatUpAcceleration = 40f;
         public float MaxMana = 100f;
-        public float ManaDepletionRate = 20f;   // Mana lost per second while floating
-        public float ManaRegenRate = 15f;   // Mana gained per second while on ground
+        public float ManaDepletionRate = 20f;
+        public float ManaRegenRate = 15f;
 
         [Header("Crouching")]
         public float CrouchedCapsuleHeight = 1f;
@@ -123,715 +120,203 @@ namespace JourneyGator.Player
         public float BonusOrientationSharpness = 10f;
         public Vector3 Gravity = new Vector3(0f, -30f, 0f);
 
-        // ─── Events (Observer Pattern) ───────────────────────────────────────
+        // ── Events ───────────────────────────────────────────────────────────
 
         /// <summary>Fired when glide starts (true) or stops (false).</summary>
         public event Action<bool> OnGlideChanged;
-
         /// <summary>Fired when the character lands on stable ground.</summary>
         public event Action OnLandedEvent;
-
         /// <summary>Fired when the character leaves stable ground.</summary>
         public event Action OnLeftGroundEvent;
-
-        /// <summary>Fired when CharacterState transitions. Args: (newState, previousState).</summary>
+        /// <summary>Fired on CharacterState transition. Args: (newState, previousState).</summary>
         public event Action<CharacterState, CharacterState> OnStateChanged;
-
         /// <summary>Fired when sprint starts (true) or stops (false).</summary>
         public event Action<bool> OnSprintChanged;
-
         /// <summary>Fired the frame the character executes a jump (first or double).</summary>
         public event Action OnJumpedEvent;
-
         /// <summary>Fired when float starts (true) or stops (false).</summary>
         public event Action<bool> OnFloatChanged;
-
-        /// <summary>Fired whenever mana changes. Value is normalized 0-1 for UI use.</summary>
+        /// <summary>Fired whenever mana changes. Value is normalized 0–1 for UI.</summary>
         public event Action<float> OnManaChanged;
 
-        // ─── Constants ───────────────────────────────────────────────────────
+        // ── Constants ────────────────────────────────────────────────────────
 
-        private const float TiltSmoothingScale = 15f;
-        private const float TiltRecoveryScale = 5f;
+        internal const float TiltSmoothingScale = 15f;
+        internal const float TiltRecoveryScale = 5f;
 
-        // ─── Public State ────────────────────────────────────────────────────
+        // ── Public State ─────────────────────────────────────────────────────
 
         public CharacterState CurrentCharacterState { get; private set; }
-        public bool IsGliding => _isGliding;
-        public bool IsSprinting => _isSprinting;
-        public bool IsFloating => _isFloating;
-        public float CurrentMana => _currentMana;
 
-        // ─── Private Fields ──────────────────────────────────────────────────
+        public bool IsGliding => CurrentCharacterState == CharacterState.Gliding;
+        public bool IsFloating => CurrentCharacterState == CharacterState.Floating;
+        public bool IsSprinting => _currentState?.IsSprinting ?? false;
+        public float CurrentMana => SharedMana;
 
-        private readonly Collider[] _probedColliders = new Collider[8];
-        private HashSet<Collider> _ignoredCollidersSet;
+        // ── Internal Shared Fields (read/written by states) ───────────────────
+        // Placed here so state instances can share data across transitions
+        // without coupling to each other.
 
-        private Vector3 _moveInputVector;
-        private Vector3 _lookInputVector;
-        private Vector3 _internalVelocityAdd = Vector3.zero;
+        internal Vector3 MoveInputVector = Vector3.zero;
+        internal Vector3 LookInputVector = Vector3.zero;
+        internal Vector3 InternalVelocityAdd = Vector3.zero;
+        internal readonly Collider[] ProbedColliders = new Collider[8];
+        internal HashSet<Collider> IgnoredCollidersSet;
 
-        private bool _jumpRequested = false;
-        private bool _jumpConsumed = false;
-        private bool _jumpedThisFrame = false;
-        private bool _jumpEventFired = false; // Prevents multi-fire across KCC sub-steps
-        private float _timeSinceJumpRequested = Mathf.Infinity;
-        private float _timeSinceLastAbleToJump = 0f;
-        private bool _doubleJumpConsumed = false;
+        // Input — written by SetInputs, read by states
+        internal bool GlideInputHeld;
+        internal bool SprintInputHeld;
+        internal bool FloatInputHeld;
+        internal bool CrouchDown;
+        internal bool CrouchUp;
 
-        private bool _isGliding = false;
-        private bool _glideInputHeld = false;
+        // Jump — shared across Grounded/Air/Gliding/Floating
+        internal bool JumpRequested;
+        internal bool JumpConsumed;
+        internal bool DoubleJumpConsumed;
+        internal bool JumpedThisFrame;
+        internal bool JumpEventFired;       // Guards against multi-fire across KCC sub-steps
+        internal float TimeSinceJumpRequested = Mathf.Infinity;
+        internal float TimeSinceLastAbleToJump = 0f;
 
-        private bool _isSprinting = false;
-        private bool _sprintInputHeld = false;
+        // Mana — persists across all states
+        internal float SharedMana;
 
-        private bool _isFloating = false;
-        private bool _floatInputHeld = false;
-        private float _currentMana;
+        // Crouch — persists across grounded/carrying
+        internal bool IsCrouching;
+        internal bool ShouldBeCrouching;
 
-        private float _currentBank = 0f;
-        private float _currentPitch = 0f;
+        // ── Private ───────────────────────────────────────────────────────────
 
-        private bool _shouldBeCrouching = false;
-        private bool _isCrouching = false;
+        private PlayerStateBase _currentState;
+        private Dictionary<CharacterState, PlayerStateBase> _states;
 
-        // ─── Unity Lifecycle ─────────────────────────────────────────────────
+        /// <summary>Typed reference so Air/Grounded states can drive tilt recovery.</summary>
+        internal GlidingState GlidingStateInstance;
+
+        // ── Unity Lifecycle ───────────────────────────────────────────────────
 
         private void Awake()
         {
             Motor.CharacterController = this;
-            _ignoredCollidersSet = new HashSet<Collider>(IgnoredColliders);
-            _currentMana = MaxMana;
-            TransitionToState(CharacterState.Default);
+            IgnoredCollidersSet = new HashSet<Collider>(IgnoredColliders);
+            SharedMana = MaxMana;
+
+            _states = new Dictionary<CharacterState, PlayerStateBase>
+            {
+                [CharacterState.Grounded] = new GroundedState(),
+                [CharacterState.Air] = new AirState(),
+                [CharacterState.Gliding] = new GlidingState(),
+                [CharacterState.Floating] = new FloatingState(),
+                [CharacterState.Stunned] = new StunnedState(),
+            };
+
+            // Typed reference so other states can call tilt recovery
+            GlidingStateInstance = (GlidingState)_states[CharacterState.Gliding];
+
+            TransitionToState(CharacterState.Grounded);
         }
 
-        // ─── State Machine ───────────────────────────────────────────────────
+        // ── State Machine ─────────────────────────────────────────────────────
 
-        /// <summary>Transition to a new CharacterState, firing exit/enter callbacks and OnStateChanged event.</summary>
         public void TransitionToState(CharacterState newState)
         {
-            CharacterState previousState = CurrentCharacterState;
-            OnStateExit(previousState, newState);
+            CharacterState prev = CurrentCharacterState;
+            _currentState?.Exit();
             CurrentCharacterState = newState;
-            OnStateEnter(newState, previousState);
-            OnStateChanged?.Invoke(newState, previousState);
+            _currentState = _states[newState];
+            _currentState.Enter(this);
+            OnStateChanged?.Invoke(newState, prev);
         }
 
-        private void OnStateEnter(CharacterState state, CharacterState fromState)
-        {
-            switch (state)
-            {
-                case CharacterState.Default:
-                    break;
-                case CharacterState.Carrying:
-                    break;
-                case CharacterState.Stunned:
-                    break;
-            }
-        }
-
-        private void OnStateExit(CharacterState state, CharacterState toState)
-        {
-            switch (state)
-            {
-                case CharacterState.Default:
-                    break;
-                case CharacterState.Stunned:
-                    break;
-            }
-        }
-
-        // ─── Input ───────────────────────────────────────────────────────────
+        // ── Input ─────────────────────────────────────────────────────────────
 
         public void SetInputs(ref PlayerCharacterInputs inputs)
         {
-            Vector3 moveInputVector = Vector3.ClampMagnitude(
+            Vector3 moveInput = Vector3.ClampMagnitude(
                 new Vector3(inputs.MoveAxisRight, 0f, inputs.MoveAxisForward), 1f);
 
-            Vector3 cameraPlanarDirection = Vector3.ProjectOnPlane(
+            Vector3 camDir = Vector3.ProjectOnPlane(
                 inputs.CameraRotation * Vector3.forward, Motor.CharacterUp).normalized;
 
-            if (cameraPlanarDirection.sqrMagnitude == 0f)
-            {
-                cameraPlanarDirection = Vector3.ProjectOnPlane(
+            if (camDir.sqrMagnitude == 0f)
+                camDir = Vector3.ProjectOnPlane(
                     inputs.CameraRotation * Vector3.up, Motor.CharacterUp).normalized;
-            }
 
-            Quaternion cameraPlanarRotation = Quaternion.LookRotation(cameraPlanarDirection, Motor.CharacterUp);
+            MoveInputVector = Quaternion.LookRotation(camDir, Motor.CharacterUp) * moveInput;
 
-            switch (CurrentCharacterState)
+            GlideInputHeld = inputs.GlideHeld;
+            SprintInputHeld = inputs.SprintHeld;
+            FloatInputHeld = inputs.FloatHeld;
+            CrouchDown = inputs.CrouchDown;
+            CrouchUp = inputs.CrouchUp;
+
+            if (inputs.JumpDown)
             {
-                case CharacterState.Default:
-                case CharacterState.Carrying:
-                    {
-                        _moveInputVector = cameraPlanarRotation * moveInputVector;
-                        _lookInputVector = OrientationMethod == OrientationMethod.TowardsCamera
-                            ? cameraPlanarDirection
-                            : _moveInputVector.normalized;
-
-                        if (inputs.JumpDown)
-                        {
-                            _timeSinceJumpRequested = 0f;
-                            _jumpRequested = true;
-                        }
-
-                        _glideInputHeld = inputs.GlideHeld;
-                        _sprintInputHeld = inputs.SprintHeld;
-                        _floatInputHeld = inputs.FloatHeld;
-                        HandleCrouchInput(inputs.CrouchDown, inputs.CrouchUp);
-                        break;
-                    }
-
-                case CharacterState.Stunned:
-                case CharacterState.Throwing:
-                    break;
+                TimeSinceJumpRequested = 0f;
+                JumpRequested = true;
             }
+
+            _currentState?.HandleInput(ref inputs, camDir);
         }
 
         public void SetInputs(ref AICharacterInputs inputs)
         {
-            _moveInputVector = inputs.MoveVector;
-            _lookInputVector = inputs.LookVector;
+            MoveInputVector = inputs.MoveVector;
+            LookInputVector = inputs.LookVector;
         }
 
-        // ─── ICharacterController Implementation ─────────────────────────────
+        // ── ICharacterController ──────────────────────────────────────────────
 
-        public void BeforeCharacterUpdate(float deltaTime)
-        {
-            _jumpEventFired = false;   // Reset once per frame — not per sub-step
-            UpdateMana(deltaTime);
-        }
+        public void BeforeCharacterUpdate(float dt)
+            => _currentState?.BeforeUpdate(dt);
 
-        public void UpdateRotation(ref Quaternion currentRotation, float deltaTime)
-        {
-            switch (CurrentCharacterState)
-            {
-                case CharacterState.Default:
-                case CharacterState.Carrying:
-                    {
-                        if (_lookInputVector.sqrMagnitude > 0f && OrientationSharpness > 0f)
-                        {
-                            Vector3 smoothedLookDir = Vector3.Slerp(
-                                Motor.CharacterForward,
-                                _lookInputVector,
-                                1f - Mathf.Exp(-OrientationSharpness * deltaTime)
-                            ).normalized;
-                            currentRotation = Quaternion.LookRotation(smoothedLookDir, Motor.CharacterUp);
-                        }
-                        ApplyBonusOrientation(ref currentRotation, deltaTime);
-                        break;
-                    }
-            }
-        }
+        public void UpdateRotation(ref Quaternion r, float dt)
+            => _currentState?.UpdateRotation(ref r, dt);
 
-        public void UpdateVelocity(ref Vector3 currentVelocity, float deltaTime)
-        {
-            switch (CurrentCharacterState)
-            {
-                case CharacterState.Default:
-                case CharacterState.Carrying:
-                    {
-                        bool isGrounded = IsGrounded();
+        public void UpdateVelocity(ref Vector3 v, float dt)
+            => _currentState?.UpdateVelocity(ref v, dt);
 
-                        // Evaluate float state first — needs to know input before movement runs
-                        UpdateFloatState();
+        public void AfterCharacterUpdate(float dt)
+            => _currentState?.AfterUpdate(dt);
 
-                        if (_isFloating)
-                        {
-                            // Skip ground movement entirely — prevents it from stripping vertical velocity.
-                            // Treat as airborne so KCC doesn't snap player back to ground.
-                            Motor.ForceUnground();
-                            SetSprinting(false);
-                            ApplyAirMovement(ref currentVelocity, deltaTime);
-                            ApplyFloatMovement(ref currentVelocity, deltaTime);
-                        }
-                        else if (isGrounded)
-                        {
-                            UpdateSprintState();
-                            ApplyGroundMovement(ref currentVelocity, deltaTime);
-                        }
-                        else
-                        {
-                            SetSprinting(false);
-                            UpdateGlideState();
-                            if (_isGliding)
-                                ApplyGlideMovement(ref currentVelocity, deltaTime);
-                            else
-                                ApplyAirMovement(ref currentVelocity, deltaTime);
-                        }
-
-                        HandleJump(ref currentVelocity, deltaTime, isGrounded);
-                        ApplyAdditiveVelocity(ref currentVelocity);
-                        break;
-                    }
-
-                case CharacterState.Stunned:
-                    currentVelocity += Gravity * deltaTime;
-                    currentVelocity *= 1f / (1f + Drag * deltaTime);
-                    break;
-            }
-        }
-
-        public void AfterCharacterUpdate(float deltaTime)
-        {
-            switch (CurrentCharacterState)
-            {
-                case CharacterState.Default:
-                case CharacterState.Carrying:
-                    {
-                        bool isGrounded = IsGrounded();
-                        UpdateJumpState(deltaTime, isGrounded);
-                        TryUncrouch();
-                        UpdateGlideTilt(deltaTime);
-                        break;
-                    }
-            }
-        }
-
-        public void PostGroundingUpdate(float deltaTime)
+        public void PostGroundingUpdate(float dt)
         {
             bool justLanded = Motor.GroundingStatus.IsStableOnGround && !Motor.LastGroundingStatus.IsStableOnGround;
             bool justLeftGround = !Motor.GroundingStatus.IsStableOnGround && Motor.LastGroundingStatus.IsStableOnGround;
 
-            if (justLanded) OnLanded();
-            if (justLeftGround) OnLeaveStableGround();
+            if (justLanded)
+            {
+                OnLandedEvent?.Invoke();
+                _currentState?.OnLanded();
+            }
+            if (justLeftGround)
+            {
+                OnLeftGroundEvent?.Invoke();
+                _currentState?.OnLeftGround();
+            }
         }
 
-        public bool IsColliderValidForCollisions(Collider coll)
-        {
-            return !_ignoredCollidersSet.Contains(coll);
-        }
+        public bool IsColliderValidForCollisions(Collider c) => !IgnoredCollidersSet.Contains(c);
 
-        public void OnGroundHit(Collider hitCollider, Vector3 hitNormal, Vector3 hitPoint,
-            ref HitStabilityReport hitStabilityReport)
+        public void OnGroundHit(Collider c, Vector3 n, Vector3 p, ref HitStabilityReport r) { }
+        public void OnMovementHit(Collider c, Vector3 n, Vector3 p, ref HitStabilityReport r) { }
+        public void ProcessHitStabilityReport(Collider c, Vector3 n, Vector3 p,
+            Vector3 pos, Quaternion rot, ref HitStabilityReport r)
         { }
+        public void OnDiscreteCollisionDetected(Collider c) { }
 
-        public void OnMovementHit(Collider hitCollider, Vector3 hitNormal, Vector3 hitPoint,
-            ref HitStabilityReport hitStabilityReport)
-        { }
+        // ── Public API ────────────────────────────────────────────────────────
 
-        public void ProcessHitStabilityReport(Collider hitCollider, Vector3 hitNormal, Vector3 hitPoint,
-            Vector3 atCharacterPosition, Quaternion atCharacterRotation,
-            ref HitStabilityReport hitStabilityReport)
-        { }
+        /// <summary>Apply an external impulse (explosion, bounce pad, etc.).</summary>
+        public void AddVelocity(Vector3 velocity) => InternalVelocityAdd += velocity;
 
-        public void OnDiscreteCollisionDetected(Collider hitCollider) { }
+        // ── Internal Event Firers ─────────────────────────────────────────────
 
-        // ─── Public API ──────────────────────────────────────────────────────
-
-        /// <summary>Apply an external impulse (e.g. from an explosion or bounce pad).</summary>
-        public void AddVelocity(Vector3 velocity)
-        {
-            _internalVelocityAdd += velocity;
-        }
-
-        // ─── Private Helpers ─────────────────────────────────────────────────
-
-        private bool IsGrounded()
-        {
-            return AllowJumpingWhenSliding
-                ? Motor.GroundingStatus.FoundAnyGround
-                : Motor.GroundingStatus.IsStableOnGround;
-        }
-
-        // ─── Private Movement ────────────────────────────────────────────────
-
-        private void ApplyGroundMovement(ref Vector3 currentVelocity, float deltaTime)
-        {
-            float currentSpeed = currentVelocity.magnitude;
-            Vector3 groundNormal = Motor.GroundingStatus.GroundNormal;
-
-            currentVelocity = Motor.GetDirectionTangentToSurface(currentVelocity, groundNormal) * currentSpeed;
-
-            Vector3 inputRight = Vector3.Cross(_moveInputVector, Motor.CharacterUp);
-            Vector3 reorientedInput = Vector3.Cross(groundNormal, inputRight).normalized * _moveInputVector.magnitude;
-            float activeSpeed = _isSprinting ? MaxStableMoveSpeed * SprintSpeedMultiplier : MaxStableMoveSpeed;
-            Vector3 targetVelocity = reorientedInput * activeSpeed;
-
-            currentVelocity = Vector3.Lerp(currentVelocity, targetVelocity,
-                1f - Mathf.Exp(-StableMovementSharpness * deltaTime));
-        }
-
-        private void ApplyAirMovement(ref Vector3 currentVelocity, float deltaTime)
-        {
-            if (_moveInputVector.sqrMagnitude > 0f)
-            {
-                Vector3 addedVelocity = _moveInputVector * AirAccelerationSpeed * deltaTime;
-                Vector3 velocityOnPlane = Vector3.ProjectOnPlane(currentVelocity, Motor.CharacterUp);
-
-                if (velocityOnPlane.magnitude < MaxAirMoveSpeed)
-                {
-                    Vector3 newTotal = Vector3.ClampMagnitude(velocityOnPlane + addedVelocity, MaxAirMoveSpeed);
-                    addedVelocity = newTotal - velocityOnPlane;
-                }
-                else if (Vector3.Dot(velocityOnPlane, addedVelocity) > 0f)
-                {
-                    addedVelocity = Vector3.ProjectOnPlane(addedVelocity, velocityOnPlane.normalized);
-                }
-
-                if (Motor.GroundingStatus.FoundAnyGround)
-                {
-                    Vector3 obstructionNormal = Vector3.Cross(
-                        Vector3.Cross(Motor.CharacterUp, Motor.GroundingStatus.GroundNormal),
-                        Motor.CharacterUp
-                    ).normalized;
-
-                    if (Vector3.Dot(currentVelocity + addedVelocity, addedVelocity) > 0f)
-                        addedVelocity = Vector3.ProjectOnPlane(addedVelocity, obstructionNormal);
-                }
-
-                currentVelocity += addedVelocity;
-            }
-
-            currentVelocity += Gravity * deltaTime;
-            currentVelocity *= 1f / (1f + Drag * deltaTime);
-        }
-
-        // ─── Sprinting ────────────────────────────────────────────────────────
-
-        /// <summary>
-        /// Single point of truth for toggling sprint state.
-        /// Fires OnSprintChanged so observers (PlayerVisuals FOV, etc.) react automatically.
-        /// </summary>
-        private void SetSprinting(bool sprinting)
-        {
-            if (sprinting == _isSprinting) return;
-            _isSprinting = sprinting;
-            OnSprintChanged?.Invoke(_isSprinting);
-        }
-
-        private void UpdateSprintState()
-        {
-            bool wantsToSprint = AllowSprinting
-                && _sprintInputHeld
-                && _moveInputVector.sqrMagnitude > 0f
-                && !_isCrouching;
-
-            SetSprinting(wantsToSprint);
-        }
-
-        // ─── Gliding ─────────────────────────────────────────────────────────
-
-        /// <summary>
-        /// Single point of truth for toggling glide state.
-        /// Fires OnGlideChanged event so observers (PlayerVisuals, etc.) react automatically.
-        /// </summary>
-        private void SetGliding(bool gliding)
-        {
-            if (gliding == _isGliding) return;
-            _isGliding = gliding;
-            OnGlideChanged?.Invoke(_isGliding);
-        }
-
-        private void UpdateGlideState()
-        {
-            bool isAirborne = !Motor.GroundingStatus.IsStableOnGround;
-            bool pastEntryDelay = _timeSinceLastAbleToJump >= GlideEntryMinAirTime;
-            bool wantsToGlide = AllowGliding && _glideInputHeld && isAirborne && pastEntryDelay;
-
-            SetGliding(wantsToGlide);
-        }
-
-        private void ApplyGlideMovement(ref Vector3 currentVelocity, float deltaTime)
-        {
-            Vector3 horizontalVelocity = Vector3.ProjectOnPlane(currentVelocity, Motor.CharacterUp);
-            Vector3 verticalVelocity = Vector3.Project(currentVelocity, Motor.CharacterUp);
-
-            if (_moveInputVector.sqrMagnitude > 0f)
-            {
-                // Directional input — accelerate toward input direction at glide speed
-                Vector3 targetHorizontal = _moveInputVector * GlideHorizontalSpeed;
-                horizontalVelocity = Vector3.Lerp(horizontalVelocity, targetHorizontal,
-                    1f - Mathf.Exp(-GlideAcceleration * deltaTime));
-            }
-            else
-            {
-                // No input — gently bleed horizontal velocity to zero so the player floats
-                horizontalVelocity = Vector3.Lerp(horizontalVelocity, Vector3.zero,
-                    1f - Mathf.Exp(-GlideDeceleration * deltaTime));
-            }
-
-            currentVelocity = horizontalVelocity + verticalVelocity;
-
-            // Reduced gravity — slow descent regardless of input
-            currentVelocity += Gravity * GlideGravityScale * deltaTime;
-
-            // Cap downward speed
-            float verticalSpeed = Vector3.Dot(currentVelocity, Motor.CharacterUp);
-            if (verticalSpeed < -GlideMaxFallSpeed)
-                currentVelocity -= Motor.CharacterUp * (verticalSpeed + GlideMaxFallSpeed);
-
-            currentVelocity *= 1f / (1f + Drag * deltaTime);
-        }
-
-        private void HandleJump(ref Vector3 currentVelocity, float deltaTime, bool isGrounded)
-        {
-            _jumpedThisFrame = false;
-            _timeSinceJumpRequested += deltaTime;
-
-            if (!_jumpRequested) return;
-
-            bool withinGracePeriod = _timeSinceLastAbleToJump <= JumpPostGroundingGraceTime;
-
-            bool canFirstJump = !_jumpConsumed && (isGrounded || withinGracePeriod);
-            if (canFirstJump)
-            {
-                Vector3 jumpDirection = Motor.CharacterUp;
-                if (Motor.GroundingStatus.FoundAnyGround && !Motor.GroundingStatus.IsStableOnGround)
-                    jumpDirection = Motor.GroundingStatus.GroundNormal;
-
-                Motor.ForceUnground();
-                currentVelocity += (jumpDirection * JumpUpSpeed) - Vector3.Project(currentVelocity, Motor.CharacterUp);
-                currentVelocity += _moveInputVector * JumpScalableForwardSpeed;
-
-                _jumpRequested = false;
-                _jumpConsumed = true;
-                _jumpedThisFrame = true;
-                if (!_jumpEventFired)
-                {
-                    _jumpEventFired = true;
-                    OnJumpedEvent?.Invoke();
-                }
-                return;
-            }
-
-            bool canDoubleJump = AllowDoubleJump && !_doubleJumpConsumed && !isGrounded;
-            if (canDoubleJump)
-            {
-                Motor.ForceUnground();
-                currentVelocity -= Vector3.Project(currentVelocity, Motor.CharacterUp);
-                currentVelocity += Motor.CharacterUp * DoubleJumpUpSpeed;
-                currentVelocity += _moveInputVector * JumpScalableForwardSpeed;
-
-                _jumpRequested = false;
-                _doubleJumpConsumed = true;
-                _jumpedThisFrame = true;
-                if (!_jumpEventFired)
-                {
-                    _jumpEventFired = true;
-                    OnJumpedEvent?.Invoke();
-                }
-            }
-        }
-
-        private void ApplyAdditiveVelocity(ref Vector3 currentVelocity)
-        {
-            if (_internalVelocityAdd.sqrMagnitude > 0f)
-            {
-                currentVelocity += _internalVelocityAdd;
-                _internalVelocityAdd = Vector3.zero;
-            }
-        }
-
-        private void UpdateJumpState(float deltaTime, bool isGrounded)
-        {
-            if (_jumpRequested && _timeSinceJumpRequested > JumpPreGroundingGraceTime)
-                _jumpRequested = false;
-
-            if (isGrounded)
-            {
-                if (!_jumpedThisFrame)
-                {
-                    _jumpConsumed = false;
-                    _doubleJumpConsumed = false;
-                    SetGliding(false);
-                }
-                _timeSinceLastAbleToJump = 0f;
-            }
-            else
-            {
-                _timeSinceLastAbleToJump += deltaTime;
-            }
-        }
-
-        private void HandleCrouchInput(bool crouchDown, bool crouchUp)
-        {
-            if (crouchDown && !_isCrouching)
-            {
-                _shouldBeCrouching = true;
-                _isCrouching = true;
-                Motor.SetCapsuleDimensions(StandingCapsuleRadius, CrouchedCapsuleHeight, CrouchedCapsuleHeight * 0.5f);
-                MeshRoot.localScale = CrouchMeshScale;
-            }
-            else if (crouchUp)
-            {
-                _shouldBeCrouching = false;
-            }
-        }
-
-        private void TryUncrouch()
-        {
-            if (!_isCrouching || _shouldBeCrouching) return;
-
-            Motor.SetCapsuleDimensions(StandingCapsuleRadius, StandingCapsuleHeight, StandingCapsuleHeight * 0.5f);
-
-            bool obstructed = Motor.CharacterOverlap(
-                Motor.TransientPosition,
-                Motor.TransientRotation,
-                _probedColliders,
-                Motor.CollidableLayers,
-                QueryTriggerInteraction.Ignore) > 0;
-
-            if (obstructed)
-                Motor.SetCapsuleDimensions(StandingCapsuleRadius, CrouchedCapsuleHeight, CrouchedCapsuleHeight * 0.5f);
-            else
-            {
-                MeshRoot.localScale = Vector3.one;
-                _isCrouching = false;
-            }
-        }
-
-        private void ApplyBonusOrientation(ref Quaternion currentRotation, float deltaTime)
-        {
-            Vector3 currentUp = currentRotation * Vector3.up;
-
-            switch (BonusOrientationMethod)
-            {
-                case BonusOrientationMethod.TowardsGravity:
-                    {
-                        Vector3 smoothedDir = Vector3.Slerp(currentUp, -Gravity.normalized,
-                            1f - Mathf.Exp(-BonusOrientationSharpness * deltaTime));
-                        currentRotation = Quaternion.FromToRotation(currentUp, smoothedDir) * currentRotation;
-                        break;
-                    }
-                case BonusOrientationMethod.TowardsGroundSlopeAndGravity:
-                    {
-                        if (Motor.GroundingStatus.IsStableOnGround)
-                        {
-                            Vector3 bottomHemiCenter = Motor.TransientPosition + currentUp * Motor.Capsule.radius;
-                            Vector3 smoothedNormal = Vector3.Slerp(Motor.CharacterUp, Motor.GroundingStatus.GroundNormal,
-                                1f - Mathf.Exp(-BonusOrientationSharpness * deltaTime));
-                            currentRotation = Quaternion.FromToRotation(currentUp, smoothedNormal) * currentRotation;
-                            Motor.SetTransientPosition(bottomHemiCenter + currentRotation * Vector3.down * Motor.Capsule.radius);
-                        }
-                        else
-                        {
-                            Vector3 smoothedDir = Vector3.Slerp(currentUp, -Gravity.normalized,
-                                1f - Mathf.Exp(-BonusOrientationSharpness * deltaTime));
-                            currentRotation = Quaternion.FromToRotation(currentUp, smoothedDir) * currentRotation;
-                        }
-                        break;
-                    }
-                default:
-                    {
-                        Vector3 smoothedDir = Vector3.Slerp(currentUp, Vector3.up,
-                            1f - Mathf.Exp(-BonusOrientationSharpness * deltaTime));
-                        currentRotation = Quaternion.FromToRotation(currentUp, smoothedDir) * currentRotation;
-                        break;
-                    }
-            }
-        }
-
-        // ─── Floating & Mana ─────────────────────────────────────────────────
-
-        /// <summary>
-        /// Single point of truth for toggling float state.
-        /// Fires OnFloatChanged so observers react automatically.
-        /// </summary>
-        private void SetFloating(bool floating)
-        {
-            if (floating == _isFloating) return;
-            _isFloating = floating;
-            OnFloatChanged?.Invoke(_isFloating);
-        }
-
-        /// <summary>
-        /// Determines whether float should be active.
-        /// Requires: feature enabled + input held + mana remaining.
-        /// Works on both ground and in air.
-        /// </summary>
-        private void UpdateFloatState()
-        {
-            bool wantsToFloat = AllowFloating && _floatInputHeld && _currentMana > 0f;
-            SetFloating(wantsToFloat);
-        }
-
-        /// <summary>
-        /// Drains mana while floating, regenerates only when grounded.
-        /// Fires OnManaChanged every frame mana changes so UI stays in sync.
-        /// </summary>
-        private void UpdateMana(float deltaTime)
-        {
-            float previousMana = _currentMana;
-
-            if (_isFloating)
-            {
-                // Drain while floating
-                _currentMana = Mathf.Max(0f, _currentMana - ManaDepletionRate * deltaTime);
-            }
-            else if (Motor.GroundingStatus.IsStableOnGround)
-            {
-                // Regenerate only on stable ground
-                _currentMana = Mathf.Min(MaxMana, _currentMana + ManaRegenRate * deltaTime);
-            }
-
-            if (!Mathf.Approximately(_currentMana, previousMana))
-                OnManaChanged?.Invoke(_currentMana / MaxMana);
-        }
-
-        /// <summary>
-        /// Smoothly accelerates the player upward toward FloatLiftSpeed.
-        /// Works by nudging vertical velocity — gravity in ApplyAirMovement/glide still applies,
-        /// so the net result is a gentle, controlled ascent.
-        /// </summary>
-        private void ApplyFloatMovement(ref Vector3 currentVelocity, float deltaTime)
-        {
-            float verticalSpeed = Vector3.Dot(currentVelocity, Motor.CharacterUp);
-
-            if (verticalSpeed < FloatLiftSpeed)
-            {
-                float newVertical = Mathf.MoveTowards(verticalSpeed, FloatLiftSpeed, FloatUpAcceleration * deltaTime);
-                currentVelocity += Motor.CharacterUp * (newVertical - verticalSpeed);
-            }
-        }
-
-        // ─── Glide Tilt ──────────────────────────────────────────────────────
-
-        private void UpdateGlideTilt(float deltaTime)
-        {
-            bool atNeutral = !_isGliding && Mathf.Abs(_currentBank) < 0.01f && Mathf.Abs(_currentPitch) < 0.01f;
-            if (atNeutral)
-            {
-                if (_currentBank != 0f || _currentPitch != 0f)
-                {
-                    _currentBank = 0f;
-                    _currentPitch = 0f;
-                    MeshRoot.localRotation = Quaternion.identity;
-                }
-                return;
-            }
-
-            float targetBank = 0f;
-            float targetPitch = 0f;
-
-            if (_isGliding)
-            {
-                Vector3 localMove = Motor.Transform.InverseTransformDirection(_moveInputVector);
-                targetBank = -localMove.x * MaxBankAngle;
-
-                Vector3 horizontalVelocity = Vector3.ProjectOnPlane(Motor.Velocity, Motor.CharacterUp);
-                float speedRatio = Mathf.Clamp01(horizontalVelocity.magnitude / GlideHorizontalSpeed);
-                targetPitch = speedRatio * MaxPitchAngle;
-            }
-
-            float activeSpeed = _isGliding ? TiltSmoothing * TiltSmoothingScale : TiltRecoverySpeed * TiltRecoveryScale;
-            float smoothFactor = 1f - Mathf.Exp(-activeSpeed * deltaTime);
-            _currentBank = Mathf.Lerp(_currentBank, targetBank, smoothFactor);
-            _currentPitch = Mathf.Lerp(_currentPitch, targetPitch, smoothFactor);
-
-            MeshRoot.localRotation = Quaternion.Euler(_currentPitch, 0f, _currentBank);
-        }
-
-        // ─── Ground Event Callbacks ──────────────────────────────────────────
-
-        protected virtual void OnLanded()
-        {
-            OnLandedEvent?.Invoke();
-        }
-
-        protected virtual void OnLeaveStableGround()
-        {
-            OnLeftGroundEvent?.Invoke();
-        }
+        internal void FireGlideChanged(bool v) => OnGlideChanged?.Invoke(v);
+        internal void FireSprintChanged(bool v) => OnSprintChanged?.Invoke(v);
+        internal void FireFloatChanged(bool v) => OnFloatChanged?.Invoke(v);
+        internal void FireManaChanged(float v) => OnManaChanged?.Invoke(v);
+        internal void FireJumped() => OnJumpedEvent?.Invoke();
     }
 }
