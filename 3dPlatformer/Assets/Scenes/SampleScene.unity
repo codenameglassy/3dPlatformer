@@ -10251,6 +10251,11 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   Character: {fileID: 6177337247759488268}
   CharacterCamera: {fileID: 4117056366006240726}
+  JumpKey: 32
+  SprintKey: 304
+  FloatKey: 102
+  CrouchKey: 99
+  GlideMouseButton: 1
 --- !u!1001 &734230166
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -28821,47 +28826,57 @@ MonoBehaviour:
   Motor: {fileID: 114967586239585221}
   MeshRoot: {fileID: 1527237891}
   CameraFollowPoint: {fileID: 4718919208156825}
-  MaxStableMoveSpeed: 10
-  StableMovementSharpness: 15
-  OrientationSharpness: 10
-  OrientationMethod: 1
-  MaxAirMoveSpeed: 5
-  AirAccelerationSpeed: 2
-  Drag: 0.1
-  AllowJumpingWhenSliding: 0
-  JumpUpSpeed: 13
-  JumpScalableForwardSpeed: 0
-  JumpPreGroundingGraceTime: 0.2
-  JumpPostGroundingGraceTime: 0.2
-  AllowDoubleJump: 1
-  DoubleJumpUpSpeed: 13
-  AllowGliding: 1
-  GlideGravityScale: 0.15
-  GlideMaxFallSpeed: 2
-  GlideHorizontalSpeed: 22
-  GlideEntryMinAirTime: 0.1
-  GlideAcceleration: 4
-  GlideDeceleration: 3
-  MaxBankAngle: 30
-  MaxPitchAngle: 12
-  TiltSmoothing: 0.15
-  TiltRecoverySpeed: 1.5
-  AllowSprinting: 1
-  SprintSpeedMultiplier: 1.7
-  AllowFloating: 1
-  FloatLiftSpeed: 5
-  FloatUpAcceleration: 10
-  MaxMana: 100
-  ManaDepletionRate: 20
-  ManaRegenRate: 15
-  CrouchedCapsuleHeight: 1
-  StandingCapsuleHeight: 2
-  StandingCapsuleRadius: 0.5
-  CrouchMeshScale: {x: 1, y: 0.5, z: 1}
+  Movement:
+    MaxSpeed: 9
+    Sharpness: 15
+    OrientationSharpness: 10
+    OrientationMethod: 1
+  Air:
+    MaxSpeed: 4
+    Acceleration: 6
+    Drag: 0.1
+  Jump:
+    AllowWhenSliding: 0
+    UpSpeed: 14
+    ScalableForwardSpeed: 0
+    PreGroundingGraceTime: 0
+    PostGroundingGraceTime: 0
+  DoubleJump:
+    Enabled: 1
+    UpSpeed: 14
+  Gliding:
+    Enabled: 1
+    GravityScale: 0.15
+    MaxFallSpeed: 2
+    HorizontalSpeed: 22
+    EntryMinAirTime: 0.1
+    Acceleration: 4
+    Deceleration: 3
+  GlideTilt:
+    MaxBankAngle: 30
+    MaxPitchAngle: 5
+    Smoothing: 0.2
+    RecoverySpeed: 2
+  Sprint:
+    Enabled: 1
+    SpeedMultiplier: 1.7
+  Floating:
+    Enabled: 1
+    LiftSpeed: 5
+    UpAcceleration: 40
+    MaxMana: 100
+    ManaDepletionRate: 20
+    ManaRegenRate: 15
+  Crouch:
+    CapsuleHeight: 1
+    StandingCapsuleHeight: 2
+    StandingCapsuleRadius: 0.5
+    MeshScale: {x: 1, y: 0.5, z: 1}
+  Misc:
+    BonusOrientation: 0
+    BonusOrientationSharpness: 10
+    Gravity: {x: 0, y: -30, z: 0}
   IgnoredColliders: []
-  BonusOrientationMethod: 0
-  BonusOrientationSharpness: 10
-  Gravity: {x: 0, y: -30, z: 0}
 --- !u!114 &6177337247759488269
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -28874,7 +28889,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 863540118a0871f419eb5690dff11d30, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  Controller: {fileID: 6177337247759488268}
   SpeedLinesVFX: {fileID: 1206268735}
   GlidingModel: {fileID: 767913286}
   PlayerCamera: {fileID: 20127479279971037}

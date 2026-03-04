@@ -6,56 +6,56 @@ namespace JourneyGator.Player
     /// Observes PlayerCharacterController events and drives all visual side-effects.
     ///
     /// OBSERVER PATTERN:
-    ///   - Subscribes to controller events in OnEnable, unsubscribes in OnDisable.
+    ///   - Subscribes to controller events in Start (after all Awake calls complete).
+    ///   - Unsubscribes in OnDisable to prevent memory leaks.
     ///   - Never polls state every frame — reacts only when something changes.
     ///   - Never modifies controller state — read-only relationship.
     ///
     /// ADDING NEW VISUALS:
-    ///   1. Add a [Header] and public field for your VFX/component reference.
-    ///   2. Subscribe a handler method in SubscribeToEvents().
+    ///   1. Add a [Header] + serialized field for your component/VFX reference.
+    ///   2. Subscribe a handler in SubscribeToEvents().
     ///   3. Unsubscribe it in UnsubscribeFromEvents().
     ///   4. Write the handler — keep it focused on one responsibility.
     /// </summary>
     public class PlayerVisuals : MonoBehaviour
     {
-        [Header("References")]
-        public PlayerCharacterController Controller;
-
         [Header("Speed Lines VFX")]
         public GameObject SpeedLinesVFX;
 
         [Header("Gliding Model")]
-        public GameObject GlidingModel; // Gliding visual — enabled while gliding, disabled otherwise
+        public GameObject GlidingModel;
 
-        [Header("Sprint FOV")]
+        [Header("FOV")]
         public Camera PlayerCamera;
-        public float BaseFOV = 60f;   // Normal field of view
-        public float SprintFOV = 75f;   // FOV when sprinting
-        public float GlideFOV = 80f;   // FOV when gliding (wider for sense of speed)
-        public float FOVChangeSpeed = 8f;    // How fast FOV lerps in/out
+        public float BaseFOV = 60f;
+        public float SprintFOV = 75f;
+        public float GlideFOV = 80f;
+        public float FOVChangeSpeed = 8f;
 
-        // ─── Private State ────────────────────────────────────────────────────
+        // ── Private ───────────────────────────────────────────────────────────
 
+        private PlayerCharacterController _controller;
         private float _targetFOV;
 
-        // ─── Unity Lifecycle ─────────────────────────────────────────────────
+        // ── Lifecycle ────────────────────────────────────────────────────────
 
         private void Awake()
         {
-            if (SpeedLinesVFX != null)
-                SpeedLinesVFX.SetActive(false);
+            // Auto-resolve controller from same GameObject — no manual Inspector wiring needed
+            _controller = GetComponent<PlayerCharacterController>();
+            if (_controller == null)
+                Debug.LogError("[PlayerVisuals] No PlayerCharacterController found on this GameObject.");
 
-            if (GlidingModel != null)
-                GlidingModel.SetActive(false);
+            if (SpeedLinesVFX != null) SpeedLinesVFX.SetActive(false);
+            if (GlidingModel != null) GlidingModel.SetActive(false);
 
             _targetFOV = BaseFOV;
-
-            if (PlayerCamera != null)
-                PlayerCamera.fieldOfView = BaseFOV;
+            if (PlayerCamera != null) PlayerCamera.fieldOfView = BaseFOV;
         }
 
-        private void OnEnable()
+        private void Start()
         {
+            // Subscribe in Start — guarantees controller Awake has already run
             SubscribeToEvents();
         }
 
@@ -69,42 +69,41 @@ namespace JourneyGator.Player
             UpdateFOV();
         }
 
-        // ─── Subscription Management ─────────────────────────────────────────
+        // ── Event Subscription ────────────────────────────────────────────────
 
         private void SubscribeToEvents()
         {
-            if (Controller == null) return;
+            if (_controller == null) return;
 
-            Controller.OnGlideChanged += HandleGlideChanged;
-            Controller.OnSprintChanged += HandleSprintChanged;
-            Controller.OnLandedEvent += HandleLanded;
-            Controller.OnLeftGroundEvent += HandleLeftGround;
-            Controller.OnStateChanged += HandleStateChanged;
-            Controller.OnJumpedEvent += HandleJumped;
-            Controller.OnFloatChanged += HandleFloatChanged;
-            Controller.OnManaChanged += HandleManaChanged;
+            _controller.OnGlideChanged += HandleGlideChanged;
+            _controller.OnSprintChanged += HandleSprintChanged;
+            _controller.OnLandedEvent += HandleLanded;
+            _controller.OnLeftGroundEvent += HandleLeftGround;
+            _controller.OnStateChanged += HandleStateChanged;
+            _controller.OnJumpedEvent += HandleJumped;
+            _controller.OnFloatChanged += HandleFloatChanged;
+            _controller.OnManaChanged += HandleManaChanged;
         }
 
         private void UnsubscribeFromEvents()
         {
-            if (Controller == null) return;
+            if (_controller == null) return;
 
-            Controller.OnGlideChanged -= HandleGlideChanged;
-            Controller.OnSprintChanged -= HandleSprintChanged;
-            Controller.OnLandedEvent -= HandleLanded;
-            Controller.OnLeftGroundEvent -= HandleLeftGround;
-            Controller.OnStateChanged -= HandleStateChanged;
-            Controller.OnJumpedEvent -= HandleJumped;
-            Controller.OnFloatChanged -= HandleFloatChanged;
-            Controller.OnManaChanged -= HandleManaChanged;
+            _controller.OnGlideChanged -= HandleGlideChanged;
+            _controller.OnSprintChanged -= HandleSprintChanged;
+            _controller.OnLandedEvent -= HandleLanded;
+            _controller.OnLeftGroundEvent -= HandleLeftGround;
+            _controller.OnStateChanged -= HandleStateChanged;
+            _controller.OnJumpedEvent -= HandleJumped;
+            _controller.OnFloatChanged -= HandleFloatChanged;
+            _controller.OnManaChanged -= HandleManaChanged;
         }
 
-        // ─── Public API ──────────────────────────────────────────────────────
+        // ── Public API ────────────────────────────────────────────────────────
 
         /// <summary>
-        /// Enables or disables the speed lines VFX.
-        /// Public so any future feature (sliding, dash, boost pad, etc.) can trigger it:
-        ///   playerVisuals.SetSpeedLines(true);
+        /// Enables or disables speed lines VFX.
+        /// Public so external features (dash, boost pad, etc.) can call it directly.
         /// </summary>
         public void SetSpeedLines(bool active)
         {
@@ -112,7 +111,7 @@ namespace JourneyGator.Player
                 SpeedLinesVFX.SetActive(active);
         }
 
-        // ─── Event Handlers ──────────────────────────────────────────────────
+        // ── Event Handlers ────────────────────────────────────────────────────
 
         private void HandleGlideChanged(bool isGliding)
         {
@@ -121,17 +120,15 @@ namespace JourneyGator.Player
             if (GlidingModel != null)
                 GlidingModel.SetActive(isGliding);
 
-            // Glide FOV takes priority over sprint FOV — revert to base (or sprint) when glide ends
-            if (isGliding)
-                _targetFOV = GlideFOV;
-            else
-                _targetFOV = Controller.IsSprinting ? SprintFOV : BaseFOV;
+            _targetFOV = isGliding
+                ? GlideFOV
+                : (_controller.IsSprinting ? SprintFOV : BaseFOV);
         }
 
         private void HandleSprintChanged(bool isSprinting)
         {
-            // Set the FOV target — UpdateFOV() smoothly lerps toward it every frame
-            _targetFOV = isSprinting ? SprintFOV : BaseFOV;
+            if (!_controller.IsGliding)
+                _targetFOV = isSprinting ? SprintFOV : BaseFOV;
         }
 
         private void HandleLanded()
@@ -139,36 +136,24 @@ namespace JourneyGator.Player
             SoundManager.Instance.Play("land");
         }
 
-        private void HandleLeftGround()
-        {
-            // e.g. trigger jump anticipation animation
-        }
+        private void HandleLeftGround() { }
 
-        private void HandleStateChanged(CharacterState newState, CharacterState previousState)
-        {
-            // e.g. swap animator layers when entering Carrying state
-        }
+        private void HandleStateChanged(CharacterState newState, CharacterState previousState) { }
 
         private void HandleJumped() => SoundManager.Instance.Play("jump");
 
         private void HandleFloatChanged(bool isFloating)
         {
-            // e.g. toggle float particles, play float sound
             // SoundManager.Instance.Play(isFloating ? "float_start" : "float_end");
         }
 
         private void HandleManaChanged(float normalizedMana)
         {
-            // normalizedMana is 0-1 — drive your mana bar UI here
-            // e.g. ManaBarUI.SetFill(normalizedMana);
+            // ManaBarUI.SetFill(normalizedMana);
         }
 
-        // ─── Private Updaters ────────────────────────────────────────────────
+        // ── FOV ───────────────────────────────────────────────────────────────
 
-        /// <summary>
-        /// Smoothly lerps camera FOV toward the target set by event handlers.
-        /// Runs every frame but only does meaningful work during transitions.
-        /// </summary>
         private void UpdateFOV()
         {
             if (PlayerCamera == null) return;
@@ -177,8 +162,7 @@ namespace JourneyGator.Player
             PlayerCamera.fieldOfView = Mathf.Lerp(
                 PlayerCamera.fieldOfView,
                 _targetFOV,
-                1f - Mathf.Exp(-FOVChangeSpeed * Time.deltaTime)
-            );
+                1f - Mathf.Exp(-FOVChangeSpeed * Time.deltaTime));
         }
     }
 }

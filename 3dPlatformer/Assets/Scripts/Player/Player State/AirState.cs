@@ -3,29 +3,19 @@ using UnityEngine;
 namespace JourneyGator.Player
 {
     /// <summary>
-    /// Active when the player is airborne (jumped or walked off a ledge).
+    /// Active when the player is airborne.
     /// Handles: air movement, double jump, coyote time, jump buffering.
     ///
     /// TRANSITIONS OUT:
     ///   → Grounded : OnLanded
-    ///   → Gliding  : RMB held + entry delay met (AfterUpdate)
-    ///   → Floating : F held + mana available (AfterUpdate)
+    ///   → Gliding  : RMB held + entry delay met
+    ///   → Floating : F held + mana available
     /// </summary>
     public class AirState : PlayerStateBase
     {
-        public override void Enter(PlayerCharacterController controller)
-        {
-            base.Enter(controller);
-        }
-
-        public override void BeforeUpdate(float dt)
-        {
-            C.JumpEventFired = false;
-        }
-
         public override void UpdateRotation(ref Quaternion r, float dt)
         {
-            SmoothRotateTowards(ref r, C.LookInputVector, C.OrientationSharpness, dt);
+            SmoothRotateTowards(ref r, C.LookInputVector, C.Movement.OrientationSharpness, dt);
             ApplyBonusOrientation(ref r, dt);
         }
 
@@ -39,37 +29,23 @@ namespace JourneyGator.Player
         public override void AfterUpdate(float dt)
         {
             UpdateJumpTimers(dt, isGrounded: false);
+            UpdateGlideTilt(dt, isGliding: false);
 
-            // Drive tilt back to neutral after leaving glide
-            C.GlidingStateInstance.UpdateGlideTilt(dt, isGliding: false);
-
-            // → Gliding: RMB held + minimum airtime
-            if (C.AllowGliding
+            if (C.Gliding.Enabled
                 && C.GlideInputHeld
-                && C.TimeSinceLastAbleToJump >= C.GlideEntryMinAirTime)
+                && C.TimeSinceLastAbleToJump >= C.Gliding.EntryMinAirTime)
             {
                 C.TransitionToState(CharacterState.Gliding);
                 return;
             }
 
-            // → Floating: F held + mana
-            if (C.AllowFloating && C.FloatInputHeld && C.SharedMana > 0f)
+            if (C.Floating.Enabled && C.FloatInputHeld && C.SharedMana > 0f)
             {
                 C.TransitionToState(CharacterState.Floating);
                 return;
             }
         }
 
-        public override void OnLanded()
-        {
-            C.TransitionToState(CharacterState.Grounded);
-        }
-
-        public override void HandleInput(ref PlayerCharacterInputs inputs, Vector3 cameraPlanarDir)
-        {
-            C.LookInputVector = C.OrientationMethod == OrientationMethod.TowardsCamera
-                ? cameraPlanarDir
-                : C.MoveInputVector.normalized;
-        }
+        public override void OnLanded() => C.TransitionToState(CharacterState.Grounded);
     }
 }

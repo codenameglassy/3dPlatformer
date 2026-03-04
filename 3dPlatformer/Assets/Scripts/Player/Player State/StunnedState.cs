@@ -4,25 +4,22 @@ namespace JourneyGator.Player
 {
     /// <summary>
     /// Active when the player is stunned.
-    /// All input is blocked. Only gravity and drag apply.
+    /// All input blocked. Only gravity and drag apply.
     ///
     /// TRANSITIONS OUT:
-    ///   Call C.TransitionToState(CharacterState.Grounded) from game logic
-    ///   once the stun duration expires.
+    ///   Driven externally — call C.TransitionToState(CharacterState.Grounded)
+    ///   from game logic once stun expires.
     ///
-    /// Example usage:
+    /// Example:
     ///   controller.TransitionToState(CharacterState.Stunned);
-    ///   await Task.Delay(stunDurationMs);
-    ///   controller.TransitionToState(CharacterState.Grounded);
+    ///   StartCoroutine(EndStunAfter(2f));
     /// </summary>
     public class StunnedState : PlayerStateBase
     {
         public override void UpdateVelocity(ref Vector3 v, float dt)
         {
-            v += C.Gravity * dt;
-            v *= 1f / (1f + C.Drag * dt);
+            v += C.Misc.Gravity * dt;
+            v *= 1f / (1f + C.Air.Drag * dt);
         }
-
-        // All other hooks intentionally empty — no input, no rotation change.
     }
 }

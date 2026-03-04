@@ -25,9 +25,9 @@ namespace JourneyGator.Player
         public float MoveAxisRight;
         public Quaternion CameraRotation;
         public bool JumpDown;
-        public bool GlideHeld;   // RMB — glide in air
-        public bool SprintHeld;  // Left Shift — sprint on ground
-        public bool FloatHeld;   // F — float with mana
+        public bool GlideHeld;
+        public bool SprintHeld;
+        public bool FloatHeld;
         public bool CrouchDown;
         public bool CrouchUp;
     }
@@ -38,89 +38,215 @@ namespace JourneyGator.Player
         public Vector3 LookVector;
     }
 
-    // ─── Controller ─────────────────────────────────────────────────────────
+    // ─── Settings ────────────────────────────────────────────────────────────
+    // Grouped as serializable structs so the Inspector stays navigable
+    // and settings can be swapped per-character via ScriptableObjects later.
+
+    [Serializable]
+    public struct MovementSettings
+    {
+        public float MaxSpeed;
+        public float Sharpness;
+        public float OrientationSharpness;
+        public OrientationMethod OrientationMethod;
+    }
+
+    [Serializable]
+    public struct AirSettings
+    {
+        public float MaxSpeed;
+        public float Acceleration;
+        public float Drag;
+    }
+
+    [Serializable]
+    public struct JumpSettings
+    {
+        public bool AllowWhenSliding;
+        public float UpSpeed;
+        public float ScalableForwardSpeed;
+        public float PreGroundingGraceTime;
+        public float PostGroundingGraceTime;
+    }
+
+    [Serializable]
+    public struct DoubleJumpSettings
+    {
+        public bool Enabled;
+        public float UpSpeed;
+    }
+
+    [Serializable]
+    public struct GlidingSettings
+    {
+        public bool Enabled;
+        public float GravityScale;
+        public float MaxFallSpeed;
+        public float HorizontalSpeed;
+        public float EntryMinAirTime;
+        public float Acceleration;
+        public float Deceleration;
+    }
+
+    [Serializable]
+    public struct GlideTiltSettings
+    {
+        public float MaxBankAngle;
+        public float MaxPitchAngle;
+        [Range(0f, 1f)] public float Smoothing;
+        [Range(0f, 2f)] public float RecoverySpeed;
+    }
+
+    [Serializable]
+    public struct SprintSettings
+    {
+        public bool Enabled;
+        public float SpeedMultiplier;
+    }
+
+    [Serializable]
+    public struct FloatingSettings
+    {
+        public bool Enabled;
+        public float LiftSpeed;
+        public float UpAcceleration;
+        public float MaxMana;
+        public float ManaDepletionRate;
+        public float ManaRegenRate;
+    }
+
+    [Serializable]
+    public struct CrouchSettings
+    {
+        public float CapsuleHeight;
+        public float StandingCapsuleHeight;
+        public float StandingCapsuleRadius;
+        public Vector3 MeshScale;
+    }
+
+    [Serializable]
+    public struct MiscSettings
+    {
+        public BonusOrientationMethod BonusOrientation;
+        public float BonusOrientationSharpness;
+        public Vector3 Gravity;
+    }
+
+    // ─── Controller ──────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Thin shell. Holds inspector settings, events, and shared transient state.
-    /// ALL behaviour lives in state classes. This class only delegates.
+    /// Thin shell. Owns settings, events, and shared transient state.
+    /// ALL movement behaviour lives in PlayerStateBase subclasses.
     ///
     /// HOW TO ADD A NEW STATE:
-    ///   1. Add to CharacterState enum.
+    ///   1. Add value to CharacterState enum.
     ///   2. Create a class extending PlayerStateBase.
-    ///   3. Register it in Awake() _states dictionary.
+    ///   3. Register it in BuildStates().
     ///   4. Call TransitionToState() to activate it.
     /// </summary>
     public class PlayerCharacterController : MonoBehaviour, ICharacterController
     {
-        // ── Inspector ────────────────────────────────────────────────────────
+        // ── Inspector ─────────────────────────────────────────────────────────
 
         [Header("References")]
         public KinematicCharacterMotor Motor;
         public Transform MeshRoot;
         public Transform CameraFollowPoint;
 
-        [Header("Stable Movement")]
-        public float MaxStableMoveSpeed = 10f;
-        public float StableMovementSharpness = 15f;
-        public float OrientationSharpness = 10f;
-        public OrientationMethod OrientationMethod = OrientationMethod.TowardsCamera;
+        [Header("Movement")]
+        public MovementSettings Movement = new MovementSettings
+        {
+            MaxSpeed = 10f,
+            Sharpness = 15f,
+            OrientationSharpness = 10f,
+            OrientationMethod = OrientationMethod.TowardsCamera,
+        };
 
-        [Header("Air Movement")]
-        public float MaxAirMoveSpeed = 15f;
-        public float AirAccelerationSpeed = 15f;
-        public float Drag = 0.1f;
+        [Header("Air")]
+        public AirSettings Air = new AirSettings
+        {
+            MaxSpeed = 15f,
+            Acceleration = 15f,
+            Drag = 0.1f,
+        };
 
         [Header("Jumping")]
-        public bool AllowJumpingWhenSliding = false;
-        public float JumpUpSpeed = 10f;
-        public float JumpScalableForwardSpeed = 10f;
-        public float JumpPreGroundingGraceTime = 0f;
-        public float JumpPostGroundingGraceTime = 0f;
+        public JumpSettings Jump = new JumpSettings
+        {
+            AllowWhenSliding = false,
+            UpSpeed = 10f,
+            ScalableForwardSpeed = 10f,
+            PreGroundingGraceTime = 0f,
+            PostGroundingGraceTime = 0f,
+        };
 
         [Header("Double Jump")]
-        public bool AllowDoubleJump = true;
-        public float DoubleJumpUpSpeed = 8f;
+        public DoubleJumpSettings DoubleJump = new DoubleJumpSettings
+        {
+            Enabled = true,
+            UpSpeed = 8f,
+        };
 
         [Header("Gliding")]
-        public bool AllowGliding = true;
-        public float GlideGravityScale = 0.15f;
-        public float GlideMaxFallSpeed = 2f;
-        public float GlideHorizontalSpeed = 12f;
-        public float GlideEntryMinAirTime = 0.1f;
-        public float GlideAcceleration = 4f;
-        public float GlideDeceleration = 3f;
+        public GlidingSettings Gliding = new GlidingSettings
+        {
+            Enabled = true,
+            GravityScale = 0.15f,
+            MaxFallSpeed = 2f,
+            HorizontalSpeed = 12f,
+            EntryMinAirTime = 0.1f,
+            Acceleration = 4f,
+            Deceleration = 3f,
+        };
 
         [Header("Glide Tilt")]
-        public float MaxBankAngle = 30f;
-        public float MaxPitchAngle = 20f;
-        [Range(0f, 1f)] public float TiltSmoothing = 0.8f;
-        [Range(0f, 2f)] public float TiltRecoverySpeed = 0.2f;
+        public GlideTiltSettings GlideTilt = new GlideTiltSettings
+        {
+            MaxBankAngle = 30f,
+            MaxPitchAngle = 20f,
+            Smoothing = 0.8f,
+            RecoverySpeed = 0.2f,
+        };
 
         [Header("Sprinting")]
-        public bool AllowSprinting = true;
-        public float SprintSpeedMultiplier = 1.7f;
+        public SprintSettings Sprint = new SprintSettings
+        {
+            Enabled = true,
+            SpeedMultiplier = 1.7f,
+        };
 
         [Header("Floating")]
-        public bool AllowFloating = true;
-        public float FloatLiftSpeed = 5f;
-        public float FloatUpAcceleration = 40f;
-        public float MaxMana = 100f;
-        public float ManaDepletionRate = 20f;
-        public float ManaRegenRate = 15f;
+        public FloatingSettings Floating = new FloatingSettings
+        {
+            Enabled = true,
+            LiftSpeed = 5f,
+            UpAcceleration = 40f,
+            MaxMana = 100f,
+            ManaDepletionRate = 20f,
+            ManaRegenRate = 15f,
+        };
 
         [Header("Crouching")]
-        public float CrouchedCapsuleHeight = 1f;
-        public float StandingCapsuleHeight = 2f;
-        public float StandingCapsuleRadius = 0.5f;
-        public Vector3 CrouchMeshScale = new Vector3(1f, 0.5f, 1f);
+        public CrouchSettings Crouch = new CrouchSettings
+        {
+            CapsuleHeight = 1f,
+            StandingCapsuleHeight = 2f,
+            StandingCapsuleRadius = 0.5f,
+            MeshScale = new Vector3(1f, 0.5f, 1f),
+        };
 
         [Header("Misc")]
-        public List<Collider> IgnoredColliders = new List<Collider>();
-        public BonusOrientationMethod BonusOrientationMethod = BonusOrientationMethod.None;
-        public float BonusOrientationSharpness = 10f;
-        public Vector3 Gravity = new Vector3(0f, -30f, 0f);
+        public MiscSettings Misc = new MiscSettings
+        {
+            BonusOrientation = BonusOrientationMethod.None,
+            BonusOrientationSharpness = 10f,
+            Gravity = new Vector3(0f, -30f, 0f),
+        };
 
-        // ── Events ───────────────────────────────────────────────────────────
+        [Header("Ignored Colliders")]
+        public List<Collider> IgnoredColliders = new List<Collider>();
+
+        // ── Events ────────────────────────────────────────────────────────────
 
         /// <summary>Fired when glide starts (true) or stops (false).</summary>
         public event Action<bool> OnGlideChanged;
@@ -128,7 +254,7 @@ namespace JourneyGator.Player
         public event Action OnLandedEvent;
         /// <summary>Fired when the character leaves stable ground.</summary>
         public event Action OnLeftGroundEvent;
-        /// <summary>Fired on CharacterState transition. Args: (newState, previousState).</summary>
+        /// <summary>Fired on CharacterState transition. (newState, previousState)</summary>
         public event Action<CharacterState, CharacterState> OnStateChanged;
         /// <summary>Fired when sprint starts (true) or stops (false).</summary>
         public event Action<bool> OnSprintChanged;
@@ -139,12 +265,12 @@ namespace JourneyGator.Player
         /// <summary>Fired whenever mana changes. Value is normalized 0–1 for UI.</summary>
         public event Action<float> OnManaChanged;
 
-        // ── Constants ────────────────────────────────────────────────────────
+        // ── Constants ─────────────────────────────────────────────────────────
 
         internal const float TiltSmoothingScale = 15f;
         internal const float TiltRecoveryScale = 5f;
 
-        // ── Public State ─────────────────────────────────────────────────────
+        // ── Public State ──────────────────────────────────────────────────────
 
         public CharacterState CurrentCharacterState { get; private set; }
 
@@ -153,56 +279,69 @@ namespace JourneyGator.Player
         public bool IsSprinting => _currentState?.IsSprinting ?? false;
         public float CurrentMana => SharedMana;
 
-        // ── Internal Shared Fields (read/written by states) ───────────────────
-        // Placed here so state instances can share data across transitions
-        // without coupling to each other.
+        // ── Internal Shared Fields ────────────────────────────────────────────
+        // Written by the controller, read/written by states.
+        // Grouped by concern for readability.
 
-        internal Vector3 MoveInputVector = Vector3.zero;
-        internal Vector3 LookInputVector = Vector3.zero;
-        internal Vector3 InternalVelocityAdd = Vector3.zero;
-        internal readonly Collider[] ProbedColliders = new Collider[8];
-        internal HashSet<Collider> IgnoredCollidersSet;
+        // Movement
+        internal Vector3 MoveInputVector;
+        internal Vector3 LookInputVector;
+        internal Vector3 InternalVelocityAdd;
 
-        // Input — written by SetInputs, read by states
+        // Input flags
         internal bool GlideInputHeld;
         internal bool SprintInputHeld;
         internal bool FloatInputHeld;
         internal bool CrouchDown;
         internal bool CrouchUp;
 
-        // Jump — shared across Grounded/Air/Gliding/Floating
+        // Jump — shared across all airborne-capable states
         internal bool JumpRequested;
         internal bool JumpConsumed;
         internal bool DoubleJumpConsumed;
         internal bool JumpedThisFrame;
-        internal bool JumpEventFired;       // Guards against multi-fire across KCC sub-steps
+        internal bool JumpEventFired;
         internal float TimeSinceJumpRequested = Mathf.Infinity;
         internal float TimeSinceLastAbleToJump = 0f;
 
-        // Mana — persists across all states
+        // Mana — persists across all state transitions
         internal float SharedMana;
 
-        // Crouch — persists across grounded/carrying
+        // Crouch — persists across grounded movement
         internal bool IsCrouching;
         internal bool ShouldBeCrouching;
+
+        // Tilt — owned here so any state can drive recovery without coupling to GlidingState
+        internal float TiltBank;
+        internal float TiltPitch;
+
+        // Physics
+        internal readonly Collider[] ProbedColliders = new Collider[8];
+        internal HashSet<Collider> IgnoredCollidersSet;
 
         // ── Private ───────────────────────────────────────────────────────────
 
         private PlayerStateBase _currentState;
         private Dictionary<CharacterState, PlayerStateBase> _states;
 
-        /// <summary>Typed reference so Air/Grounded states can drive tilt recovery.</summary>
-        internal GlidingState GlidingStateInstance;
-
-        // ── Unity Lifecycle ───────────────────────────────────────────────────
+        // ── Lifecycle ─────────────────────────────────────────────────────────
 
         private void Awake()
         {
             Motor.CharacterController = this;
             IgnoredCollidersSet = new HashSet<Collider>(IgnoredColliders);
-            SharedMana = MaxMana;
+            SharedMana = Floating.MaxMana;
 
-            _states = new Dictionary<CharacterState, PlayerStateBase>
+            _states = BuildStates();
+            TransitionToState(CharacterState.Grounded);
+        }
+
+        /// <summary>
+        /// Register all states here. Add new entries as the game grows.
+        /// </summary>
+        private Dictionary<CharacterState, PlayerStateBase> BuildStates()
+        {
+            return new Dictionary<CharacterState, PlayerStateBase>
             {
                 [CharacterState.Grounded] = new GroundedState(),
                 [CharacterState.Air] = new AirState(),
@@ -210,21 +349,22 @@ namespace JourneyGator.Player
                 [CharacterState.Floating] = new FloatingState(),
                 [CharacterState.Stunned] = new StunnedState(),
             };
-
-            // Typed reference so other states can call tilt recovery
-            GlidingStateInstance = (GlidingState)_states[CharacterState.Gliding];
-
-            TransitionToState(CharacterState.Grounded);
         }
 
         // ── State Machine ─────────────────────────────────────────────────────
 
         public void TransitionToState(CharacterState newState)
         {
+            if (!_states.TryGetValue(newState, out PlayerStateBase next))
+            {
+                Debug.LogError($"[FSM] State '{newState}' is not registered. Add it to BuildStates().");
+                return;
+            }
+
             CharacterState prev = CurrentCharacterState;
             _currentState?.Exit();
             CurrentCharacterState = newState;
-            _currentState = _states[newState];
+            _currentState = next;
             _currentState.Enter(this);
             OnStateChanged?.Invoke(newState, prev);
         }
@@ -233,7 +373,8 @@ namespace JourneyGator.Player
 
         public void SetInputs(ref PlayerCharacterInputs inputs)
         {
-            Vector3 moveInput = Vector3.ClampMagnitude(
+            // Build camera-relative move vector once — states read C.MoveInputVector
+            Vector3 moveRaw = Vector3.ClampMagnitude(
                 new Vector3(inputs.MoveAxisRight, 0f, inputs.MoveAxisForward), 1f);
 
             Vector3 camDir = Vector3.ProjectOnPlane(
@@ -243,8 +384,14 @@ namespace JourneyGator.Player
                 camDir = Vector3.ProjectOnPlane(
                     inputs.CameraRotation * Vector3.up, Motor.CharacterUp).normalized;
 
-            MoveInputVector = Quaternion.LookRotation(camDir, Motor.CharacterUp) * moveInput;
+            MoveInputVector = Quaternion.LookRotation(camDir, Motor.CharacterUp) * moveRaw;
 
+            // LookInputVector resolved once here — no duplication across states
+            LookInputVector = Movement.OrientationMethod == OrientationMethod.TowardsCamera
+                ? camDir
+                : MoveInputVector.normalized;
+
+            // Raw input flags
             GlideInputHeld = inputs.GlideHeld;
             SprintInputHeld = inputs.SprintHeld;
             FloatInputHeld = inputs.FloatHeld;
@@ -269,7 +416,15 @@ namespace JourneyGator.Player
         // ── ICharacterController ──────────────────────────────────────────────
 
         public void BeforeCharacterUpdate(float dt)
-            => _currentState?.BeforeUpdate(dt);
+        {
+            // Reset once per frame here — never duplicated in individual states
+            JumpEventFired = false;
+
+            // Mana ticked centrally so it's never missed regardless of active state
+            TickMana(dt);
+
+            _currentState?.BeforeUpdate(dt);
+        }
 
         public void UpdateRotation(ref Quaternion r, float dt)
             => _currentState?.UpdateRotation(ref r, dt);
@@ -312,11 +467,31 @@ namespace JourneyGator.Player
         public void AddVelocity(Vector3 velocity) => InternalVelocityAdd += velocity;
 
         // ── Internal Event Firers ─────────────────────────────────────────────
+        // States call these — never touch events directly from outside.
 
         internal void FireGlideChanged(bool v) => OnGlideChanged?.Invoke(v);
         internal void FireSprintChanged(bool v) => OnSprintChanged?.Invoke(v);
         internal void FireFloatChanged(bool v) => OnFloatChanged?.Invoke(v);
         internal void FireManaChanged(float v) => OnManaChanged?.Invoke(v);
         internal void FireJumped() => OnJumpedEvent?.Invoke();
+
+        // ── Private ───────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Mana ticked here so it is always correct regardless of active state.
+        /// FloatingState.BeforeUpdate signals drain via IsFloating property.
+        /// </summary>
+        private void TickMana(float dt)
+        {
+            float prev = SharedMana;
+
+            if (IsFloating)
+                SharedMana = Mathf.Max(0f, SharedMana - Floating.ManaDepletionRate * dt);
+            else if (Motor.GroundingStatus.IsStableOnGround)
+                SharedMana = Mathf.Min(Floating.MaxMana, SharedMana + Floating.ManaRegenRate * dt);
+
+            if (!Mathf.Approximately(SharedMana, prev))
+                FireManaChanged(SharedMana / Floating.MaxMana);
+        }
     }
 }

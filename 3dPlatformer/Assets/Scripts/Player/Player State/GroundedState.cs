@@ -7,8 +7,8 @@ namespace JourneyGator.Player
     /// Handles: walking, sprinting, crouching, jump initiation.
     ///
     /// TRANSITIONS OUT:
-    ///   → Air      : OnLeftGround (walked off or jumped)
-    ///   → Floating : F held + mana available (AfterUpdate)
+    ///   → Air      : OnLeftGround (walked off ledge or jumped)
+    ///   → Floating : F held + mana available
     /// </summary>
     public class GroundedState : PlayerStateBase
     {
@@ -20,84 +20,59 @@ namespace JourneyGator.Player
         public override void Enter(PlayerCharacterController controller)
         {
             base.Enter(controller);
-            // Reset jump flags fresh on landing
             C.JumpConsumed = false;
             C.DoubleJumpConsumed = false;
         }
 
-        public override void Exit()
-        {
-            SetSprinting(false);
-        }
-
-        public override void BeforeUpdate(float dt)
-        {
-            C.JumpEventFired = false;
-
-            // Mana regenerates on stable ground
-            UpdateMana(dt);
-        }
+        public override void Exit() => SetSprinting(false);
 
         public override void UpdateRotation(ref Quaternion r, float dt)
         {
-            SmoothRotateTowards(ref r, C.LookInputVector, C.OrientationSharpness, dt);
+            SmoothRotateTowards(ref r, C.LookInputVector, C.Movement.OrientationSharpness, dt);
             ApplyBonusOrientation(ref r, dt);
         }
 
         public override void UpdateVelocity(ref Vector3 v, float dt)
         {
-            bool isGrounded = C.AllowJumpingWhenSliding
-                ? Motor.GroundingStatus.FoundAnyGround
-                : Motor.GroundingStatus.IsStableOnGround;
+            bool grounded = IsGrounded();
 
-            if (isGrounded)
+            if (grounded)
             {
                 UpdateSprintState();
                 ApplyGroundMovement(ref v, dt);
             }
             else
             {
-                // Not actually on ground this sub-step (e.g. just jumped, mid-ForceUnground).
-                // Apply air movement so velocity isn't zeroed out while the state transition
-                // is still pending (PostGroundingUpdate fires after UpdateVelocity).
+                // Frame gap between ForceUnground() and PostGroundingUpdate:
+                // fall back to air movement so jump velocity isn't zeroed.
                 ApplyAirMovement(ref v, dt);
             }
 
-            HandleJump(ref v, dt, treatAsGrounded: isGrounded);
+            HandleJump(ref v, dt, treatAsGrounded: grounded);
             ApplyAdditiveVelocity(ref v);
         }
 
         public override void AfterUpdate(float dt)
         {
-            bool isGrounded = C.AllowJumpingWhenSliding
-                ? Motor.GroundingStatus.FoundAnyGround
-                : Motor.GroundingStatus.IsStableOnGround;
-
-            UpdateJumpTimers(dt, isGrounded);
+            bool grounded = IsGrounded();
+            UpdateJumpTimers(dt, grounded);
             TryUncrouch();
+            UpdateGlideTilt(dt, isGliding: false);
 
-            // Drive tilt back to neutral if player landed after gliding
-            C.GlidingStateInstance.UpdateGlideTilt(dt, isGliding: false);
-
-            // Safety: if PostGroundingUpdate didn't fire OnLeftGround yet but we're
-            // clearly airborne (e.g. jumped this frame), transition immediately.
-            if (!isGrounded && C.JumpedThisFrame)
+            // Jumped this frame — don't wait for PostGroundingUpdate
+            if (!grounded && C.JumpedThisFrame)
             {
                 C.TransitionToState(CharacterState.Air);
                 return;
             }
 
-            // Transition to Floating if player presses F with mana
-            if (isGrounded && C.AllowFloating && C.FloatInputHeld && C.SharedMana > 0f)
+            if (grounded && C.Floating.Enabled && C.FloatInputHeld && C.SharedMana > 0f)
                 C.TransitionToState(CharacterState.Floating);
         }
 
-        public override void OnLeftGround()
-        {
-            C.TransitionToState(CharacterState.Air);
-        }
+        public override void OnLeftGround() => C.TransitionToState(CharacterState.Air);
 
-        // ── Movement ─────────────────────────────────────────────────────────
+        // ── Ground Movement ───────────────────────────────────────────────────
 
         private void ApplyGroundMovement(ref Vector3 v, float dt)
         {
@@ -108,10 +83,12 @@ namespace JourneyGator.Player
 
             Vector3 inputRight = Vector3.Cross(C.MoveInputVector, Motor.CharacterUp);
             Vector3 reoriented = Vector3.Cross(normal, inputRight).normalized * C.MoveInputVector.magnitude;
-            float targetSpeed = _isSprinting ? C.MaxStableMoveSpeed * C.SprintSpeedMultiplier : C.MaxStableMoveSpeed;
+            float targetSpeed = _isSprinting
+                ? C.Movement.MaxSpeed * C.Sprint.SpeedMultiplier
+                : C.Movement.MaxSpeed;
 
             v = Vector3.Lerp(v, reoriented * targetSpeed,
-                1f - Mathf.Exp(-C.StableMovementSharpness * dt));
+                1f - Mathf.Exp(-C.Movement.Sharpness * dt));
         }
 
         // ── Sprinting ─────────────────────────────────────────────────────────
@@ -125,37 +102,25 @@ namespace JourneyGator.Player
 
         private void UpdateSprintState()
         {
-            SetSprinting(C.AllowSprinting
+            SetSprinting(C.Sprint.Enabled
                 && C.SprintInputHeld
                 && C.MoveInputVector.sqrMagnitude > 0f
                 && !C.IsCrouching);
-        }
-
-        // ── Mana ─────────────────────────────────────────────────────────────
-
-        private void UpdateMana(float dt)
-        {
-            float prev = C.SharedMana;
-            C.SharedMana = Mathf.Min(C.MaxMana, C.SharedMana + C.ManaRegenRate * dt);
-            if (!Mathf.Approximately(C.SharedMana, prev))
-                C.FireManaChanged(C.SharedMana / C.MaxMana);
         }
 
         // ── Crouching ─────────────────────────────────────────────────────────
 
         public override void HandleInput(ref PlayerCharacterInputs inputs, Vector3 cameraPlanarDir)
         {
-            C.LookInputVector = C.OrientationMethod == OrientationMethod.TowardsCamera
-                ? cameraPlanarDir
-                : C.MoveInputVector.normalized;
-
             if (C.CrouchDown && !C.IsCrouching)
             {
                 C.ShouldBeCrouching = true;
                 C.IsCrouching = true;
-                Motor.SetCapsuleDimensions(C.StandingCapsuleRadius, C.CrouchedCapsuleHeight,
-                    C.CrouchedCapsuleHeight * 0.5f);
-                C.MeshRoot.localScale = C.CrouchMeshScale;
+                Motor.SetCapsuleDimensions(
+                    C.Crouch.StandingCapsuleRadius,
+                    C.Crouch.CapsuleHeight,
+                    C.Crouch.CapsuleHeight * 0.5f);
+                C.MeshRoot.localScale = C.Crouch.MeshScale;
             }
             else if (C.CrouchUp)
             {
@@ -167,8 +132,10 @@ namespace JourneyGator.Player
         {
             if (!C.IsCrouching || C.ShouldBeCrouching) return;
 
-            Motor.SetCapsuleDimensions(C.StandingCapsuleRadius, C.StandingCapsuleHeight,
-                C.StandingCapsuleHeight * 0.5f);
+            Motor.SetCapsuleDimensions(
+                C.Crouch.StandingCapsuleRadius,
+                C.Crouch.StandingCapsuleHeight,
+                C.Crouch.StandingCapsuleHeight * 0.5f);
 
             bool blocked = Motor.CharacterOverlap(
                 Motor.TransientPosition, Motor.TransientRotation,
@@ -176,8 +143,10 @@ namespace JourneyGator.Player
                 QueryTriggerInteraction.Ignore) > 0;
 
             if (blocked)
-                Motor.SetCapsuleDimensions(C.StandingCapsuleRadius, C.CrouchedCapsuleHeight,
-                    C.CrouchedCapsuleHeight * 0.5f);
+                Motor.SetCapsuleDimensions(
+                    C.Crouch.StandingCapsuleRadius,
+                    C.Crouch.CapsuleHeight,
+                    C.Crouch.CapsuleHeight * 0.5f);
             else
             {
                 C.MeshRoot.localScale = Vector3.one;
