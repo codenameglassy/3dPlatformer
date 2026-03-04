@@ -24,17 +24,28 @@ namespace JourneyGator.Player
         [Header("Speed Lines VFX")]
         public GameObject SpeedLinesVFX;
 
-        // Add future VFX references here, e.g.:
-        // [Header("Landing VFX")]
-        // public ParticleSystem LandingDustVFX;
+        [Header("Sprint FOV")]
+        public Camera PlayerCamera;
+        public float BaseFOV = 60f;   // Normal field of view
+        public float SprintFOV = 75f;   // FOV when sprinting
+        public float GlideFOV = 80f;   // FOV when gliding (wider for sense of speed)
+        public float FOVChangeSpeed = 8f;    // How fast FOV lerps in/out
+
+        // ─── Private State ────────────────────────────────────────────────────
+
+        private float _targetFOV;
 
         // ─── Unity Lifecycle ─────────────────────────────────────────────────
 
         private void Awake()
         {
-            // Ensure all VFX start disabled regardless of scene setup
             if (SpeedLinesVFX != null)
                 SpeedLinesVFX.SetActive(false);
+
+            _targetFOV = BaseFOV;
+
+            if (PlayerCamera != null)
+                PlayerCamera.fieldOfView = BaseFOV;
         }
 
         private void OnEnable()
@@ -44,8 +55,12 @@ namespace JourneyGator.Player
 
         private void OnDisable()
         {
-            // Always unsubscribe to prevent memory leaks and ghost callbacks
             UnsubscribeFromEvents();
+        }
+
+        private void Update()
+        {
+            UpdateFOV();
         }
 
         // ─── Subscription Management ─────────────────────────────────────────
@@ -55,6 +70,7 @@ namespace JourneyGator.Player
             if (Controller == null) return;
 
             Controller.OnGlideChanged += HandleGlideChanged;
+            Controller.OnSprintChanged += HandleSprintChanged;
             Controller.OnLandedEvent += HandleLanded;
             Controller.OnLeftGroundEvent += HandleLeftGround;
             Controller.OnStateChanged += HandleStateChanged;
@@ -65,6 +81,7 @@ namespace JourneyGator.Player
             if (Controller == null) return;
 
             Controller.OnGlideChanged -= HandleGlideChanged;
+            Controller.OnSprintChanged -= HandleSprintChanged;
             Controller.OnLandedEvent -= HandleLanded;
             Controller.OnLeftGroundEvent -= HandleLeftGround;
             Controller.OnStateChanged -= HandleStateChanged;
@@ -74,7 +91,7 @@ namespace JourneyGator.Player
 
         /// <summary>
         /// Enables or disables the speed lines VFX.
-        /// Public so any future feature (sliding, dash, boost pad, etc.) can trigger it directly:
+        /// Public so any future feature (sliding, dash, boost pad, etc.) can trigger it:
         ///   playerVisuals.SetSpeedLines(true);
         /// </summary>
         public void SetSpeedLines(bool active)
@@ -88,6 +105,18 @@ namespace JourneyGator.Player
         private void HandleGlideChanged(bool isGliding)
         {
             SetSpeedLines(isGliding);
+
+            // Glide FOV takes priority over sprint FOV — revert to base (or sprint) when glide ends
+            if (isGliding)
+                _targetFOV = GlideFOV;
+            else
+                _targetFOV = Controller.IsSprinting ? SprintFOV : BaseFOV;
+        }
+
+        private void HandleSprintChanged(bool isSprinting)
+        {
+            // Set the FOV target — UpdateFOV() smoothly lerps toward it every frame
+            _targetFOV = isSprinting ? SprintFOV : BaseFOV;
         }
 
         private void HandleLanded()
@@ -103,7 +132,24 @@ namespace JourneyGator.Player
         private void HandleStateChanged(CharacterState newState, CharacterState previousState)
         {
             // e.g. swap animator layers when entering Carrying state
-            // e.g. enable carry IK rig
+        }
+
+        // ─── Private Updaters ────────────────────────────────────────────────
+
+        /// <summary>
+        /// Smoothly lerps camera FOV toward the target set by HandleSprintChanged.
+        /// Runs every frame but only does meaningful work during transitions.
+        /// </summary>
+        private void UpdateFOV()
+        {
+            if (PlayerCamera == null) return;
+            if (Mathf.Approximately(PlayerCamera.fieldOfView, _targetFOV)) return;
+
+            PlayerCamera.fieldOfView = Mathf.Lerp(
+                PlayerCamera.fieldOfView,
+                _targetFOV,
+                1f - Mathf.Exp(-FOVChangeSpeed * Time.deltaTime)
+            );
         }
     }
 }

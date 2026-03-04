@@ -35,7 +35,8 @@ namespace JourneyGator.Player
         public float MoveAxisRight;
         public Quaternion CameraRotation;
         public bool JumpDown;
-        public bool GlideHeld;  // Hold right-click to glide
+        public bool GlideHeld;    // Hold right-click to glide
+        public bool SprintHeld;   // Hold Left Shift to sprint
         public bool CrouchDown;
         public bool CrouchUp;
     }
@@ -95,6 +96,10 @@ namespace JourneyGator.Player
         [Range(0f, 1f)] public float TiltSmoothing = 0.8f;
         [Range(0f, 2f)] public float TiltRecoverySpeed = 0.2f;
 
+        [Header("Sprinting")]
+        public bool AllowSprinting = true;
+        public float SprintSpeedMultiplier = 1.7f;  // Multiplied against MaxStableMoveSpeed while sprinting
+
         [Header("Crouching")]
         public float CrouchedCapsuleHeight = 1f;
         public float StandingCapsuleHeight = 2f;
@@ -121,6 +126,9 @@ namespace JourneyGator.Player
         /// <summary>Fired when CharacterState transitions. Args: (newState, previousState).</summary>
         public event Action<CharacterState, CharacterState> OnStateChanged;
 
+        /// <summary>Fired when sprint starts (true) or stops (false).</summary>
+        public event Action<bool> OnSprintChanged;
+
         // ─── Constants ───────────────────────────────────────────────────────
 
         private const float TiltSmoothingScale = 15f;
@@ -130,6 +138,7 @@ namespace JourneyGator.Player
 
         public CharacterState CurrentCharacterState { get; private set; }
         public bool IsGliding => _isGliding;
+        public bool IsSprinting => _isSprinting;
 
         // ─── Private Fields ──────────────────────────────────────────────────
 
@@ -149,6 +158,9 @@ namespace JourneyGator.Player
 
         private bool _isGliding = false;
         private bool _glideInputHeld = false;
+
+        private bool _isSprinting = false;
+        private bool _sprintInputHeld = false;
 
         private float _currentBank = 0f;
         private float _currentPitch = 0f;
@@ -236,6 +248,7 @@ namespace JourneyGator.Player
                         }
 
                         _glideInputHeld = inputs.GlideHeld;
+                        _sprintInputHeld = inputs.SprintHeld;
                         HandleCrouchInput(inputs.CrouchDown, inputs.CrouchUp);
                         break;
                     }
@@ -289,10 +302,12 @@ namespace JourneyGator.Player
 
                         if (isGrounded)
                         {
+                            UpdateSprintState();
                             ApplyGroundMovement(ref currentVelocity, deltaTime);
                         }
                         else
                         {
+                            SetSprinting(false); // Can't sprint in air
                             UpdateGlideState();
                             if (_isGliding)
                                 ApplyGlideMovement(ref currentVelocity, deltaTime);
@@ -385,7 +400,8 @@ namespace JourneyGator.Player
 
             Vector3 inputRight = Vector3.Cross(_moveInputVector, Motor.CharacterUp);
             Vector3 reorientedInput = Vector3.Cross(groundNormal, inputRight).normalized * _moveInputVector.magnitude;
-            Vector3 targetVelocity = reorientedInput * MaxStableMoveSpeed;
+            float activeSpeed = _isSprinting ? MaxStableMoveSpeed * SprintSpeedMultiplier : MaxStableMoveSpeed;
+            Vector3 targetVelocity = reorientedInput * activeSpeed;
 
             currentVelocity = Vector3.Lerp(currentVelocity, targetVelocity,
                 1f - Mathf.Exp(-StableMovementSharpness * deltaTime));
@@ -424,6 +440,30 @@ namespace JourneyGator.Player
 
             currentVelocity += Gravity * deltaTime;
             currentVelocity *= 1f / (1f + Drag * deltaTime);
+        }
+
+        // ─── Sprinting ────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Single point of truth for toggling sprint state.
+        /// Fires OnSprintChanged so observers (PlayerVisuals FOV, etc.) react automatically.
+        /// </summary>
+        private void SetSprinting(bool sprinting)
+        {
+            if (sprinting == _isSprinting) return;
+            _isSprinting = sprinting;
+            OnSprintChanged?.Invoke(_isSprinting);
+        }
+
+        private void UpdateSprintState()
+        {
+            // Sprint requires: feature enabled + input held + moving + not crouching
+            bool wantsToSprint = AllowSprinting
+                && _sprintInputHeld
+                && _moveInputVector.sqrMagnitude > 0f
+                && !_isCrouching;
+
+            SetSprinting(wantsToSprint);
         }
 
         // ─── Gliding ─────────────────────────────────────────────────────────

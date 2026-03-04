@@ -101,6 +101,7 @@ namespace JourneyGator.Player
                 CameraRotation = CharacterCamera.Transform.rotation,
                 JumpDown = Input.GetKeyDown(KeyCode.Space),
                 GlideHeld = Input.GetMouseButton(1),             // Hold right-click to glide
+                SprintHeld = Input.GetKey(KeyCode.LeftShift),     // Hold Left Shift to sprint
                 CrouchDown = Input.GetKeyDown(KeyCode.C),
                 CrouchUp = Input.GetKeyUp(KeyCode.C),
             };
