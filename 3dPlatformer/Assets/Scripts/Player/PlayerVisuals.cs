@@ -81,7 +81,8 @@ namespace JourneyGator.Player
             Controller.OnLeftGroundEvent += HandleLeftGround;
             Controller.OnStateChanged += HandleStateChanged;
             Controller.OnJumpedEvent += HandleJumped;
-           
+            Controller.OnFloatChanged += HandleFloatChanged;
+            Controller.OnManaChanged += HandleManaChanged;
         }
 
         private void UnsubscribeFromEvents()
@@ -94,7 +95,8 @@ namespace JourneyGator.Player
             Controller.OnLeftGroundEvent -= HandleLeftGround;
             Controller.OnStateChanged -= HandleStateChanged;
             Controller.OnJumpedEvent -= HandleJumped;
-          
+            Controller.OnFloatChanged -= HandleFloatChanged;
+            Controller.OnManaChanged -= HandleManaChanged;
         }
 
         // ─── Public API ──────────────────────────────────────────────────────
@@ -134,7 +136,6 @@ namespace JourneyGator.Player
 
         private void HandleLanded()
         {
-            // e.g. LandingDustVFX?.Play();
             SoundManager.Instance.Play("land");
         }
 
@@ -150,10 +151,22 @@ namespace JourneyGator.Player
 
         private void HandleJumped() => SoundManager.Instance.Play("jump");
 
+        private void HandleFloatChanged(bool isFloating)
+        {
+            // e.g. toggle float particles, play float sound
+            // SoundManager.Instance.Play(isFloating ? "float_start" : "float_end");
+        }
+
+        private void HandleManaChanged(float normalizedMana)
+        {
+            // normalizedMana is 0-1 — drive your mana bar UI here
+            // e.g. ManaBarUI.SetFill(normalizedMana);
+        }
+
         // ─── Private Updaters ────────────────────────────────────────────────
 
         /// <summary>
-        /// Smoothly lerps camera FOV toward the target set by HandleSprintChanged.
+        /// Smoothly lerps camera FOV toward the target set by event handlers.
         /// Runs every frame but only does meaningful work during transitions.
         /// </summary>
         private void UpdateFOV()

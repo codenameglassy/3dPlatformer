@@ -28848,6 +28848,12 @@ MonoBehaviour:
   TiltRecoverySpeed: 1.5
   AllowSprinting: 1
   SprintSpeedMultiplier: 1.7
+  AllowFloating: 1
+  FloatLiftSpeed: 5
+  FloatUpAcceleration: 10
+  MaxMana: 100
+  ManaDepletionRate: 20
+  ManaRegenRate: 15
   CrouchedCapsuleHeight: 1
   StandingCapsuleHeight: 2
   StandingCapsuleRadius: 0.5

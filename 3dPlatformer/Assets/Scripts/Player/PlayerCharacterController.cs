@@ -37,6 +37,7 @@ namespace JourneyGator.Player
         public bool JumpDown;
         public bool GlideHeld;    // Hold right-click to glide
         public bool SprintHeld;   // Hold Left Shift to sprint
+        public bool FloatHeld;    // Hold F to float
         public bool CrouchDown;
         public bool CrouchUp;
     }
@@ -100,7 +101,15 @@ namespace JourneyGator.Player
 
         [Header("Sprinting")]
         public bool AllowSprinting = true;
-        public float SprintSpeedMultiplier = 1.7f;  // Multiplied against MaxStableMoveSpeed while sprinting
+        public float SprintSpeedMultiplier = 1.7f;
+
+        [Header("Floating")]
+        public bool AllowFloating = true;
+        public float FloatLiftSpeed = 5f;    // Max upward speed while floating (m/s)
+        public float FloatUpAcceleration = 10f;   // How quickly lift speed is reached
+        public float MaxMana = 100f;
+        public float ManaDepletionRate = 20f;   // Mana lost per second while floating
+        public float ManaRegenRate = 15f;   // Mana gained per second while on ground
 
         [Header("Crouching")]
         public float CrouchedCapsuleHeight = 1f;
@@ -134,6 +143,12 @@ namespace JourneyGator.Player
         /// <summary>Fired the frame the character executes a jump (first or double).</summary>
         public event Action OnJumpedEvent;
 
+        /// <summary>Fired when float starts (true) or stops (false).</summary>
+        public event Action<bool> OnFloatChanged;
+
+        /// <summary>Fired whenever mana changes. Value is normalized 0-1 for UI use.</summary>
+        public event Action<float> OnManaChanged;
+
         // ─── Constants ───────────────────────────────────────────────────────
 
         private const float TiltSmoothingScale = 15f;
@@ -144,6 +159,8 @@ namespace JourneyGator.Player
         public CharacterState CurrentCharacterState { get; private set; }
         public bool IsGliding => _isGliding;
         public bool IsSprinting => _isSprinting;
+        public bool IsFloating => _isFloating;
+        public float CurrentMana => _currentMana;
 
         // ─── Private Fields ──────────────────────────────────────────────────
 
@@ -157,6 +174,7 @@ namespace JourneyGator.Player
         private bool _jumpRequested = false;
         private bool _jumpConsumed = false;
         private bool _jumpedThisFrame = false;
+        private bool _jumpEventFired = false; // Prevents multi-fire across KCC sub-steps
         private float _timeSinceJumpRequested = Mathf.Infinity;
         private float _timeSinceLastAbleToJump = 0f;
         private bool _doubleJumpConsumed = false;
@@ -166,6 +184,10 @@ namespace JourneyGator.Player
 
         private bool _isSprinting = false;
         private bool _sprintInputHeld = false;
+
+        private bool _isFloating = false;
+        private bool _floatInputHeld = false;
+        private float _currentMana;
 
         private float _currentBank = 0f;
         private float _currentPitch = 0f;
@@ -179,6 +201,7 @@ namespace JourneyGator.Player
         {
             Motor.CharacterController = this;
             _ignoredCollidersSet = new HashSet<Collider>(IgnoredColliders);
+            _currentMana = MaxMana;
             TransitionToState(CharacterState.Default);
         }
 
@@ -254,6 +277,7 @@ namespace JourneyGator.Player
 
                         _glideInputHeld = inputs.GlideHeld;
                         _sprintInputHeld = inputs.SprintHeld;
+                        _floatInputHeld = inputs.FloatHeld;
                         HandleCrouchInput(inputs.CrouchDown, inputs.CrouchUp);
                         break;
                     }
@@ -272,7 +296,11 @@ namespace JourneyGator.Player
 
         // ─── ICharacterController Implementation ─────────────────────────────
 
-        public void BeforeCharacterUpdate(float deltaTime) { }
+        public void BeforeCharacterUpdate(float deltaTime)
+        {
+            _jumpEventFired = false;   // Reset once per frame — not per sub-step
+            UpdateMana(deltaTime);
+        }
 
         public void UpdateRotation(ref Quaternion currentRotation, float deltaTime)
         {
@@ -305,14 +333,26 @@ namespace JourneyGator.Player
                     {
                         bool isGrounded = IsGrounded();
 
-                        if (isGrounded)
+                        // Evaluate float state first — needs to know input before movement runs
+                        UpdateFloatState();
+
+                        if (_isFloating)
+                        {
+                            // Skip ground movement entirely — prevents it from stripping vertical velocity.
+                            // Treat as airborne so KCC doesn't snap player back to ground.
+                            Motor.ForceUnground();
+                            SetSprinting(false);
+                            ApplyAirMovement(ref currentVelocity, deltaTime);
+                            ApplyFloatMovement(ref currentVelocity, deltaTime);
+                        }
+                        else if (isGrounded)
                         {
                             UpdateSprintState();
                             ApplyGroundMovement(ref currentVelocity, deltaTime);
                         }
                         else
                         {
-                            SetSprinting(false); // Can't sprint in air
+                            SetSprinting(false);
                             UpdateGlideState();
                             if (_isGliding)
                                 ApplyGlideMovement(ref currentVelocity, deltaTime);
@@ -462,7 +502,6 @@ namespace JourneyGator.Player
 
         private void UpdateSprintState()
         {
-            // Sprint requires: feature enabled + input held + moving + not crouching
             bool wantsToSprint = AllowSprinting
                 && _sprintInputHeld
                 && _moveInputVector.sqrMagnitude > 0f
@@ -548,7 +587,11 @@ namespace JourneyGator.Player
                 _jumpRequested = false;
                 _jumpConsumed = true;
                 _jumpedThisFrame = true;
-                OnJumpedEvent?.Invoke();
+                if (!_jumpEventFired)
+                {
+                    _jumpEventFired = true;
+                    OnJumpedEvent?.Invoke();
+                }
                 return;
             }
 
@@ -563,7 +606,11 @@ namespace JourneyGator.Player
                 _jumpRequested = false;
                 _doubleJumpConsumed = true;
                 _jumpedThisFrame = true;
-                OnJumpedEvent?.Invoke();
+                if (!_jumpEventFired)
+                {
+                    _jumpEventFired = true;
+                    OnJumpedEvent?.Invoke();
+                }
             }
         }
 
@@ -672,6 +719,69 @@ namespace JourneyGator.Player
                         currentRotation = Quaternion.FromToRotation(currentUp, smoothedDir) * currentRotation;
                         break;
                     }
+            }
+        }
+
+        // ─── Floating & Mana ─────────────────────────────────────────────────
+
+        /// <summary>
+        /// Single point of truth for toggling float state.
+        /// Fires OnFloatChanged so observers react automatically.
+        /// </summary>
+        private void SetFloating(bool floating)
+        {
+            if (floating == _isFloating) return;
+            _isFloating = floating;
+            OnFloatChanged?.Invoke(_isFloating);
+        }
+
+        /// <summary>
+        /// Determines whether float should be active.
+        /// Requires: feature enabled + input held + mana remaining.
+        /// Works on both ground and in air.
+        /// </summary>
+        private void UpdateFloatState()
+        {
+            bool wantsToFloat = AllowFloating && _floatInputHeld && _currentMana > 0f;
+            SetFloating(wantsToFloat);
+        }
+
+        /// <summary>
+        /// Drains mana while floating, regenerates only when grounded.
+        /// Fires OnManaChanged every frame mana changes so UI stays in sync.
+        /// </summary>
+        private void UpdateMana(float deltaTime)
+        {
+            float previousMana = _currentMana;
+
+            if (_isFloating)
+            {
+                // Drain while floating
+                _currentMana = Mathf.Max(0f, _currentMana - ManaDepletionRate * deltaTime);
+            }
+            else if (Motor.GroundingStatus.IsStableOnGround)
+            {
+                // Regenerate only on stable ground
+                _currentMana = Mathf.Min(MaxMana, _currentMana + ManaRegenRate * deltaTime);
+            }
+
+            if (!Mathf.Approximately(_currentMana, previousMana))
+                OnManaChanged?.Invoke(_currentMana / MaxMana);
+        }
+
+        /// <summary>
+        /// Smoothly accelerates the player upward toward FloatLiftSpeed.
+        /// Works by nudging vertical velocity — gravity in ApplyAirMovement/glide still applies,
+        /// so the net result is a gentle, controlled ascent.
+        /// </summary>
+        private void ApplyFloatMovement(ref Vector3 currentVelocity, float deltaTime)
+        {
+            float verticalSpeed = Vector3.Dot(currentVelocity, Motor.CharacterUp);
+
+            if (verticalSpeed < FloatLiftSpeed)
+            {
+                float newVertical = Mathf.MoveTowards(verticalSpeed, FloatLiftSpeed, FloatUpAcceleration * deltaTime);
+                currentVelocity += Motor.CharacterUp * (newVertical - verticalSpeed);
             }
         }
 

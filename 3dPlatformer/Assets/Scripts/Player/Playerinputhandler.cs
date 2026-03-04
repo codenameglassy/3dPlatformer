@@ -102,6 +102,7 @@ namespace JourneyGator.Player
                 JumpDown = Input.GetKeyDown(KeyCode.Space),
                 GlideHeld = Input.GetMouseButton(1),             // Hold right-click to glide
                 SprintHeld = Input.GetKey(KeyCode.LeftShift),     // Hold Left Shift to sprint
+                FloatHeld = Input.GetKey(KeyCode.F),             // Hold F to float
                 CrouchDown = Input.GetKeyDown(KeyCode.C),
                 CrouchUp = Input.GetKeyUp(KeyCode.C),
             };
