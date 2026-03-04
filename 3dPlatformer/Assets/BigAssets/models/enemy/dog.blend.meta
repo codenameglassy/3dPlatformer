@@ -1,0 +1,278 @@
+fileFormatVersion: 2
+guid: 81a5b10aaec753e4998f31f3985ef410
+ModelImporter:
+  serializedVersion: 22
+  fileIDToRecycleName:
+    100000: breast_L
+    100002: breast_R
+    100004: //RootNode
+    100006: dog_mesh
+    100008: doggie_rig
+    100010: ear1_L
+    100012: ear1_R
+    100014: ear2_L
+    100016: ear2_R
+    100018: ear_L
+    100020: ear_R
+    100022: foot_L
+    100024: foot_R
+    100026: front_foot_L
+    100028: front_foot_R
+    100030: front_shin_L
+    100032: front_shin_R
+    100034: front_thigh_L
+    100036: front_thigh_R
+    100038: front_toe_L
+    100040: front_toe_R
+    100042: ik_front_L
+    100044: ik_front_R
+    100046: ik_hind_L
+    100048: ik_hind_R
+    100050: pelvis_L
+    100052: pelvis_R
+    100054: pole_back_L
+    100056: pole_back_R
+    100058: pole_front_L
+    100060: pole_front_R
+    100062: shin_L
+    100064: shin_R
+    100066: shoulder_L
+    100068: shoulder_R
+    100070: spine_003
+    100072: spine_004
+    100074: spine_005
+    100076: spine_006
+    100078: spine_008
+    100080: spine_009
+    100082: spine_011
+    100084: spine_012
+    100086: spine_013
+    100088: spine_014
+    100090: thigh_L
+    100092: thigh_R
+    100094: toe_L
+    100096: toe_R
+    400000: breast_L
+    400002: breast_R
+    400004: //RootNode
+    400006: dog_mesh
+    400008: doggie_rig
+    400010: ear1_L
+    400012: ear1_R
+    400014: ear2_L
+    400016: ear2_R
+    400018: ear_L
+    400020: ear_R
+    400022: foot_L
+    400024: foot_R
+    400026: front_foot_L
+    400028: front_foot_R
+    400030: front_shin_L
+    400032: front_shin_R
+    400034: front_thigh_L
+    400036: front_thigh_R
+    400038: front_toe_L
+    400040: front_toe_R
+    400042: ik_front_L
+    400044: ik_front_R
+    400046: ik_hind_L
+    400048: ik_hind_R
+    400050: pelvis_L
+    400052: pelvis_R
+    400054: pole_back_L
+    400056: pole_back_R
+    400058: pole_front_L
+    400060: pole_front_R
+    400062: shin_L
+    400064: shin_R
+    400066: shoulder_L
+    400068: shoulder_R
+    400070: spine_003
+    400072: spine_004
+    400074: spine_005
+    400076: spine_006
+    400078: spine_008
+    400080: spine_009
+    400082: spine_011
+    400084: spine_012
+    400086: spine_013
+    400088: spine_014
+    400090: thigh_L
+    400092: thigh_R
+    400094: toe_L
+    400096: toe_R
+    2100000: None__color_pallate_png
+    4300000: dog_mesh
+    7400000: Default Take
+    7400002: run
+    7400004: run_bake
+    7400006: WALK_BAKE
+    7400008: walk_cycle
+    7400010: tail_wag
+    9500000: //RootNode
+    13700000: dog_mesh
+  externalObjects: {}
+  materials:
+    importMaterials: 1
+    materialName: 0
+    materialSearch: 1
+    materialLocation: 1
+  animations:
+    legacyGenerateAnimations: 4
+    bakeSimulation: 0
+    resampleCurves: 1
+    optimizeGameObjects: 0
+    motionNodeName: 
+    rigImportErrors: 
+    rigImportWarnings: 
+    animationImportErrors: 
+    animationImportWarnings: 
+    animationRetargetingWarnings: 
+    animationDoRetargetingWarnings: 0
+    importAnimatedCustomProperties: 0
+    importConstraints: 0
+    animationCompression: 1
+    animationRotationError: 0.5
+    animationPositionError: 0.5
+    animationScaleError: 0.5
+    animationWrapMode: 0
+    extraExposedTransformPaths: []
+    extraUserProperties: []
+    clipAnimations:
+    - serializedVersion: 16
+      name: run_bake
+      takeName: run_bake
+      firstFrame: 0
+      lastFrame: 12
+      wrapMode: 0
+      orientationOffsetY: 0
+      level: 0
+      cycleOffset: 0
+      loop: 0
+      hasAdditiveReferencePose: 0
+      loopTime: 1
+      loopBlend: 0
+      loopBlendOrientation: 0
+      loopBlendPositionY: 0
+      loopBlendPositionXZ: 0
+      keepOriginalOrientation: 0
+      keepOriginalPositionY: 1
+      keepOriginalPositionXZ: 0
+      heightFromFeet: 0
+      mirror: 0
+      bodyMask: 01000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000
+      curves: []
+      events: []
+      transformMask: []
+      maskType: 3
+      maskSource: {instanceID: 0}
+      additiveReferencePoseFrame: 0
+    - serializedVersion: 16
+      name: WALK_BAKE
+      takeName: WALK_BAKE
+      firstFrame: 0
+      lastFrame: 18
+      wrapMode: 0
+      orientationOffsetY: 0
+      level: 0
+      cycleOffset: 0
+      loop: 0
+      hasAdditiveReferencePose: 0
+      loopTime: 1
+      loopBlend: 0
+      loopBlendOrientation: 0
+      loopBlendPositionY: 0
+      loopBlendPositionXZ: 0
+      keepOriginalOrientation: 0
+      keepOriginalPositionY: 1
+      keepOriginalPositionXZ: 0
+      heightFromFeet: 0
+      mirror: 0
+      bodyMask: 01000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000
+      curves: []
+      events: []
+      transformMask: []
+      maskType: 3
+      maskSource: {instanceID: 0}
+      additiveReferencePoseFrame: 0
+    - serializedVersion: 16
+      name: tail_wag
+      takeName: tail_wag
+      firstFrame: 0
+      lastFrame: 9
+      wrapMode: 0
+      orientationOffsetY: 0
+      level: 0
+      cycleOffset: 0
+      loop: 0
+      hasAdditiveReferencePose: 0
+      loopTime: 1
+      loopBlend: 0
+      loopBlendOrientation: 0
+      loopBlendPositionY: 0
+      loopBlendPositionXZ: 0
+      keepOriginalOrientation: 0
+      keepOriginalPositionY: 1
+      keepOriginalPositionXZ: 0
+      heightFromFeet: 0
+      mirror: 0
+      bodyMask: 01000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000
+      curves: []
+      events: []
+      transformMask: []
+      maskType: 3
+      maskSource: {instanceID: 0}
+      additiveReferencePoseFrame: 0
+    isReadable: 1
+  meshes:
+    lODScreenPercentages: []
+    globalScale: 1
+    meshCompression: 0
+    addColliders: 0
+    importVisibility: 1
+    importBlendShapes: 1
+    importCameras: 1
+    importLights: 1
+    swapUVChannels: 0
+    generateSecondaryUV: 0
+    useFileUnits: 1
+    optimizeMeshForGPU: 1
+    keepQuads: 0
+    weldVertices: 1
+    preserveHierarchy: 0
+    indexFormat: 0
+    secondaryUVAngleDistortion: 8
+    secondaryUVAreaDistortion: 15.000001
+    secondaryUVHardAngle: 88
+    secondaryUVPackMargin: 4
+    useFileScale: 1
+  tangentSpace:
+    normalSmoothAngle: 60
+    normalImportMode: 0
+    tangentImportMode: 3
+    normalCalculationMode: 4
+  importAnimation: 1
+  copyAvatar: 0
+  humanDescription:
+    serializedVersion: 2
+    human: []
+    skeleton: []
+    armTwist: 0.5
+    foreArmTwist: 0.5
+    upperLegTwist: 0.5
+    legTwist: 0.5
+    armStretch: 0.05
+    legStretch: 0.05
+    feetSpacing: 0
+    rootMotionBoneName: 
+    rootMotionBoneRotation: {x: 0, y: 0, z: 0, w: 1}
+    hasTranslationDoF: 0
+    hasExtraRoot: 0
+    skeletonHasParents: 1
+  lastHumanDescriptionAvatarSource: {instanceID: 0}
+  animationType: 2
+  humanoidOversampling: 1
+  additionalBone: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 

@@ -1,0 +1,204 @@
+fileFormatVersion: 2
+guid: acd53b77b1eaccb44b21dba0131766ae
+ModelImporter:
+  serializedVersion: 23
+  fileIDToRecycleName:
+    100000: column
+    100002: column2
+    100004: Cube
+    100006: Cube_001
+    100008: Cube_011
+    100010: Cube_013
+    100012: Cube_016
+    100014: //RootNode
+    100016: Wall
+    100018: Wall_001
+    100020: Wall_002
+    100022: Wall_003
+    100024: Wall_004
+    100026: broken_stone
+    100028: cylinders
+    100030: floor
+    100032: mane
+    100034: pillar
+    100036: pillar_001
+    100038: wall_broken
+    100040: mane_001
+    100042: magical_dhungo
+    100044: magical_dhungo_001
+    400000: column
+    400002: column2
+    400004: Cube
+    400006: Cube_001
+    400008: Cube_011
+    400010: Cube_013
+    400012: Cube_016
+    400014: //RootNode
+    400016: Wall
+    400018: Wall_001
+    400020: Wall_002
+    400022: Wall_003
+    400024: Wall_004
+    400026: broken_stone
+    400028: cylinders
+    400030: floor
+    400032: mane
+    400034: pillar
+    400036: pillar_001
+    400038: wall_broken
+    400040: mane_001
+    400042: magical_dhungo
+    400044: magical_dhungo_001
+    2100000: unnamed
+    2300000: column
+    2300002: column2
+    2300004: Cube
+    2300006: Cube_001
+    2300008: Cube_011
+    2300010: Cube_013
+    2300012: Cube_016
+    2300014: Wall
+    2300016: Wall_001
+    2300018: Wall_002
+    2300020: Wall_003
+    2300022: Wall_004
+    2300024: broken_stone
+    2300026: cylinders
+    2300028: floor
+    2300030: mane
+    2300032: pillar
+    2300034: pillar_001
+    2300036: wall_broken
+    2300038: mane_001
+    2300040: magical_dhungo
+    2300042: magical_dhungo_001
+    3300000: column
+    3300002: column2
+    3300004: Cube
+    3300006: Cube_001
+    3300008: Cube_011
+    3300010: Cube_013
+    3300012: Cube_016
+    3300014: Wall
+    3300016: Wall_001
+    3300018: Wall_002
+    3300020: Wall_003
+    3300022: Wall_004
+    3300024: broken_stone
+    3300026: cylinders
+    3300028: floor
+    3300030: mane
+    3300032: pillar
+    3300034: pillar_001
+    3300036: wall_broken
+    3300038: mane_001
+    3300040: magical_dhungo
+    3300042: magical_dhungo_001
+    4300000: Cube_016
+    4300002: Cube_001
+    4300004: Wall_004
+    4300006: Wall_003
+    4300008: Wall_002
+    4300010: Wall_001
+    4300012: Wall
+    4300014: Cube_013
+    4300016: Cube_011
+    4300018: Cube
+    4300020: column
+    4300022: column2
+    4300024: mane
+    4300026: cylinders
+    4300028: wall_broken
+    4300030: broken_stone
+    4300032: floor
+    4300034: pillar_001
+    4300036: pillar
+    4300038: mane_001
+    4300040: magical_dhungo
+    4300042: magical_dhungo_001
+    7400000: Default Take
+    9500000: //RootNode
+    2186277476908879412: ImportLogs
+  externalObjects: {}
+  materials:
+    importMaterials: 1
+    materialName: 0
+    materialSearch: 1
+    materialLocation: 1
+  animations:
+    legacyGenerateAnimations: 4
+    bakeSimulation: 0
+    resampleCurves: 1
+    optimizeGameObjects: 0
+    motionNodeName: 
+    rigImportErrors: 
+    rigImportWarnings: 
+    animationImportErrors: 
+    animationImportWarnings: 
+    animationRetargetingWarnings: 
+    animationDoRetargetingWarnings: 0
+    importAnimatedCustomProperties: 0
+    importConstraints: 0
+    animationCompression: 1
+    animationRotationError: 0.5
+    animationPositionError: 0.5
+    animationScaleError: 0.5
+    animationWrapMode: 0
+    extraExposedTransformPaths: []
+    extraUserProperties: []
+    clipAnimations: []
+    isReadable: 1
+  meshes:
+    lODScreenPercentages: []
+    globalScale: 1
+    meshCompression: 0
+    addColliders: 0
+    importVisibility: 1
+    importBlendShapes: 1
+    importCameras: 1
+    importLights: 1
+    swapUVChannels: 0
+    generateSecondaryUV: 0
+    useFileUnits: 1
+    optimizeMeshForGPU: 1
+    keepQuads: 0
+    weldVertices: 1
+    preserveHierarchy: 0
+    indexFormat: 0
+    secondaryUVAngleDistortion: 8
+    secondaryUVAreaDistortion: 15.000001
+    secondaryUVHardAngle: 88
+    secondaryUVPackMargin: 4
+    useFileScale: 1
+    previousCalculatedGlobalScale: 1
+    hasPreviousCalculatedGlobalScale: 1
+  tangentSpace:
+    normalSmoothAngle: 60
+    normalImportMode: 0
+    tangentImportMode: 3
+    normalCalculationMode: 4
+  importAnimation: 1
+  copyAvatar: 0
+  humanDescription:
+    serializedVersion: 2
+    human: []
+    skeleton: []
+    armTwist: 0.5
+    foreArmTwist: 0.5
+    upperLegTwist: 0.5
+    legTwist: 0.5
+    armStretch: 0.05
+    legStretch: 0.05
+    feetSpacing: 0
+    rootMotionBoneName: 
+    rootMotionBoneRotation: {x: 0, y: 0, z: 0, w: 1}
+    hasTranslationDoF: 0
+    hasExtraRoot: 0
+    skeletonHasParents: 1
+  lastHumanDescriptionAvatarSource: {instanceID: 0}
+  animationType: 2
+  humanoidOversampling: 1
+  additionalBone: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 

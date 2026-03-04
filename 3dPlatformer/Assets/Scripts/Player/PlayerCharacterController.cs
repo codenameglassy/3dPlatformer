@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using UnityEngine;
 using KinematicCharacterController;
 
@@ -49,8 +50,8 @@ namespace JourneyGator.Player
 
     /// <summary>
     /// Drives character movement via the KinematicCharacterMotor.
-    /// Handles grounded movement, air movement, jumping, and crouching.
-    /// Game-specific states (Carrying, Throwing, etc.) extend the switch blocks below.
+    /// Fires events when movement states change — subscribe in PlayerVisuals or any observer.
+    /// Never references VFX, audio, or animation directly.
     /// </summary>
     public class PlayerCharacterController : MonoBehaviour, ICharacterController
     {
@@ -58,7 +59,6 @@ namespace JourneyGator.Player
         public KinematicCharacterMotor Motor;
         public Transform MeshRoot;
         public Transform CameraFollowPoint;
-        public GameObject SpeedLinesVFX; // Assign the speed lines child on the camera
 
         [Header("Stable Movement")]
         public float MaxStableMoveSpeed = 10f;
@@ -80,22 +80,21 @@ namespace JourneyGator.Player
 
         [Header("Double Jump")]
         public bool AllowDoubleJump = true;
-        public float DoubleJumpUpSpeed = 8f;   // Slightly weaker than first jump by default
-
+        public float DoubleJumpUpSpeed = 8f;
 
         [Header("Gliding")]
         public bool AllowGliding = true;
-        public float GlideGravityScale = 0.15f;  // Fraction of normal gravity applied while gliding
-        public float GlideMaxFallSpeed = 2f;     // Terminal velocity while gliding (m/s downward)
-        public float GlideHorizontalSpeed = 12f;    // Forward speed boost while gliding
-        public float GlideEntryMinAirTime = 0.1f;   // Seconds airborne before glide can activate
-
+        public float GlideGravityScale = 0.15f;
+        public float GlideMaxFallSpeed = 2f;
+        public float GlideHorizontalSpeed = 12f;
+        public float GlideEntryMinAirTime = 0.1f;
 
         [Header("Glide Tilt")]
-        public float MaxBankAngle = 30f;   // Max left/right roll when turning (degrees)
-        public float MaxPitchAngle = 20f;   // Max forward pitch at full speed (degrees)
-        [Range(0f, 1f)] public float TiltSmoothing = 0.8f;  // How snappy the tilt lerps IN while gliding
-        [Range(0f, 2f)] public float TiltRecoverySpeed = 0.2f;  // How fast tilt returns to neutral after glide ends
+        public float MaxBankAngle = 30f;
+        public float MaxPitchAngle = 20f;
+        [Range(0f, 1f)] public float TiltSmoothing = 0.8f;
+        [Range(0f, 2f)] public float TiltRecoverySpeed = 0.2f;
+
         [Header("Crouching")]
         public float CrouchedCapsuleHeight = 1f;
         public float StandingCapsuleHeight = 2f;
@@ -108,14 +107,34 @@ namespace JourneyGator.Player
         public float BonusOrientationSharpness = 10f;
         public Vector3 Gravity = new Vector3(0f, -30f, 0f);
 
+        // ─── Events (Observer Pattern) ───────────────────────────────────────
+
+        /// <summary>Fired when glide starts (true) or stops (false).</summary>
+        public event Action<bool> OnGlideChanged;
+
+        /// <summary>Fired when the character lands on stable ground.</summary>
+        public event Action OnLandedEvent;
+
+        /// <summary>Fired when the character leaves stable ground.</summary>
+        public event Action OnLeftGroundEvent;
+
+        /// <summary>Fired when CharacterState transitions. Args: (newState, previousState).</summary>
+        public event Action<CharacterState, CharacterState> OnStateChanged;
+
+        // ─── Constants ───────────────────────────────────────────────────────
+
+        private const float TiltSmoothingScale = 15f;
+        private const float TiltRecoveryScale = 5f;
+
         // ─── Public State ────────────────────────────────────────────────────
 
         public CharacterState CurrentCharacterState { get; private set; }
+        public bool IsGliding => _isGliding;
 
         // ─── Private Fields ──────────────────────────────────────────────────
 
-        // Preallocated buffers — avoids per-frame GC allocations
         private readonly Collider[] _probedColliders = new Collider[8];
+        private HashSet<Collider> _ignoredCollidersSet;
 
         private Vector3 _moveInputVector;
         private Vector3 _lookInputVector;
@@ -126,13 +145,13 @@ namespace JourneyGator.Player
         private bool _jumpedThisFrame = false;
         private float _timeSinceJumpRequested = Mathf.Infinity;
         private float _timeSinceLastAbleToJump = 0f;
-        private bool _doubleJumpConsumed = false; // Tracks whether the mid-air jump has been used
+        private bool _doubleJumpConsumed = false;
 
         private bool _isGliding = false;
         private bool _glideInputHeld = false;
 
-        private float _currentBank = 0f; // Smoothed bank angle, interpolated independently
-        private float _currentPitch = 0f; // Smoothed pitch angle, interpolated independently
+        private float _currentBank = 0f;
+        private float _currentPitch = 0f;
 
         private bool _shouldBeCrouching = false;
         private bool _isCrouching = false;
@@ -142,18 +161,20 @@ namespace JourneyGator.Player
         private void Awake()
         {
             Motor.CharacterController = this;
+            _ignoredCollidersSet = new HashSet<Collider>(IgnoredColliders);
             TransitionToState(CharacterState.Default);
         }
 
         // ─── State Machine ───────────────────────────────────────────────────
 
-        /// <summary>Transition to a new CharacterState, firing exit/enter callbacks.</summary>
+        /// <summary>Transition to a new CharacterState, firing exit/enter callbacks and OnStateChanged event.</summary>
         public void TransitionToState(CharacterState newState)
         {
             CharacterState previousState = CurrentCharacterState;
             OnStateExit(previousState, newState);
             CurrentCharacterState = newState;
             OnStateEnter(newState, previousState);
+            OnStateChanged?.Invoke(newState, previousState);
         }
 
         private void OnStateEnter(CharacterState state, CharacterState fromState)
@@ -163,10 +184,8 @@ namespace JourneyGator.Player
                 case CharacterState.Default:
                     break;
                 case CharacterState.Carrying:
-                    // e.g. reduce move speed, play carry animation
                     break;
                 case CharacterState.Stunned:
-                    // e.g. disable input, play stun VFX
                     break;
             }
         }
@@ -178,14 +197,12 @@ namespace JourneyGator.Player
                 case CharacterState.Default:
                     break;
                 case CharacterState.Stunned:
-                    // e.g. restore movement after stun ends
                     break;
             }
         }
 
         // ─── Input ───────────────────────────────────────────────────────────
 
-        /// <summary>Called each frame by PlayerInputHandler to supply player input.</summary>
         public void SetInputs(ref PlayerCharacterInputs inputs)
         {
             Vector3 moveInputVector = Vector3.ClampMagnitude(
@@ -225,12 +242,10 @@ namespace JourneyGator.Player
 
                 case CharacterState.Stunned:
                 case CharacterState.Throwing:
-                    // Ignore all movement input while stunned or in throw
                     break;
             }
         }
 
-        /// <summary>Called each frame by AI scripts to supply movement input.</summary>
         public void SetInputs(ref AICharacterInputs inputs)
         {
             _moveInputVector = inputs.MoveVector;
@@ -255,10 +270,8 @@ namespace JourneyGator.Player
                                 _lookInputVector,
                                 1f - Mathf.Exp(-OrientationSharpness * deltaTime)
                             ).normalized;
-
                             currentRotation = Quaternion.LookRotation(smoothedLookDir, Motor.CharacterUp);
                         }
-
                         ApplyBonusOrientation(ref currentRotation, deltaTime);
                         break;
                     }
@@ -272,7 +285,9 @@ namespace JourneyGator.Player
                 case CharacterState.Default:
                 case CharacterState.Carrying:
                     {
-                        if (Motor.GroundingStatus.IsStableOnGround)
+                        bool isGrounded = IsGrounded();
+
+                        if (isGrounded)
                         {
                             ApplyGroundMovement(ref currentVelocity, deltaTime);
                         }
@@ -285,13 +300,12 @@ namespace JourneyGator.Player
                                 ApplyAirMovement(ref currentVelocity, deltaTime);
                         }
 
-                        HandleJump(ref currentVelocity, deltaTime);
+                        HandleJump(ref currentVelocity, deltaTime, isGrounded);
                         ApplyAdditiveVelocity(ref currentVelocity);
                         break;
                     }
 
                 case CharacterState.Stunned:
-                    // Apply gravity only — no player control
                     currentVelocity += Gravity * deltaTime;
                     currentVelocity *= 1f / (1f + Drag * deltaTime);
                     break;
@@ -305,7 +319,8 @@ namespace JourneyGator.Player
                 case CharacterState.Default:
                 case CharacterState.Carrying:
                     {
-                        UpdateJumpState(deltaTime);
+                        bool isGrounded = IsGrounded();
+                        UpdateJumpState(deltaTime, isGrounded);
                         TryUncrouch();
                         UpdateGlideTilt(deltaTime);
                         break;
@@ -324,7 +339,7 @@ namespace JourneyGator.Player
 
         public bool IsColliderValidForCollisions(Collider coll)
         {
-            return !IgnoredColliders.Contains(coll);
+            return !_ignoredCollidersSet.Contains(coll);
         }
 
         public void OnGroundHit(Collider hitCollider, Vector3 hitNormal, Vector3 hitPoint,
@@ -350,17 +365,24 @@ namespace JourneyGator.Player
             _internalVelocityAdd += velocity;
         }
 
-        // ─── Private Movement Helpers ────────────────────────────────────────
+        // ─── Private Helpers ─────────────────────────────────────────────────
+
+        private bool IsGrounded()
+        {
+            return AllowJumpingWhenSliding
+                ? Motor.GroundingStatus.FoundAnyGround
+                : Motor.GroundingStatus.IsStableOnGround;
+        }
+
+        // ─── Private Movement ────────────────────────────────────────────────
 
         private void ApplyGroundMovement(ref Vector3 currentVelocity, float deltaTime)
         {
             float currentSpeed = currentVelocity.magnitude;
             Vector3 groundNormal = Motor.GroundingStatus.GroundNormal;
 
-            // Reorient current velocity along slope
             currentVelocity = Motor.GetDirectionTangentToSurface(currentVelocity, groundNormal) * currentSpeed;
 
-            // Build target velocity along slope
             Vector3 inputRight = Vector3.Cross(_moveInputVector, Motor.CharacterUp);
             Vector3 reorientedInput = Vector3.Cross(groundNormal, inputRight).normalized * _moveInputVector.magnitude;
             Vector3 targetVelocity = reorientedInput * MaxStableMoveSpeed;
@@ -383,11 +405,9 @@ namespace JourneyGator.Player
                 }
                 else if (Vector3.Dot(velocityOnPlane, addedVelocity) > 0f)
                 {
-                    // Don't accelerate further in the direction already exceeding max
                     addedVelocity = Vector3.ProjectOnPlane(addedVelocity, velocityOnPlane.normalized);
                 }
 
-                // Prevent air-climbing sloped walls
                 if (Motor.GroundingStatus.FoundAnyGround)
                 {
                     Vector3 obstructionNormal = Vector3.Cross(
@@ -396,9 +416,7 @@ namespace JourneyGator.Player
                     ).normalized;
 
                     if (Vector3.Dot(currentVelocity + addedVelocity, addedVelocity) > 0f)
-                    {
                         addedVelocity = Vector3.ProjectOnPlane(addedVelocity, obstructionNormal);
-                    }
                 }
 
                 currentVelocity += addedVelocity;
@@ -408,28 +426,19 @@ namespace JourneyGator.Player
             currentVelocity *= 1f / (1f + Drag * deltaTime);
         }
 
-
         // ─── Gliding ─────────────────────────────────────────────────────────
 
         /// <summary>
-        /// Single point of truth for toggling glide state and its side-effects (VFX, etc).
-        /// Always use this instead of setting _isGliding directly.
+        /// Single point of truth for toggling glide state.
+        /// Fires OnGlideChanged event so observers (PlayerVisuals, etc.) react automatically.
         /// </summary>
         private void SetGliding(bool gliding)
         {
             if (gliding == _isGliding) return;
-
             _isGliding = gliding;
-
-            if (SpeedLinesVFX != null)
-                SpeedLinesVFX.SetActive(_isGliding);
+            OnGlideChanged?.Invoke(_isGliding);
         }
 
-
-        /// <summary>
-        /// Determines whether the player should enter, stay in, or exit glide.
-        /// Glide activates when: airborne + jump held + above minimum air time + not used double jump mid-glide.
-        /// </summary>
         private void UpdateGlideState()
         {
             bool isAirborne = !Motor.GroundingStatus.IsStableOnGround;
@@ -439,13 +448,8 @@ namespace JourneyGator.Player
             SetGliding(wantsToGlide);
         }
 
-        /// <summary>
-        /// Applies reduced gravity and caps downward velocity for a smooth glide feel.
-        /// Horizontal movement uses GlideHorizontalSpeed so the player has meaningful control.
-        /// </summary>
         private void ApplyGlideMovement(ref Vector3 currentVelocity, float deltaTime)
         {
-            // Horizontal — full directional control at glide speed
             if (_moveInputVector.sqrMagnitude > 0f)
             {
                 Vector3 horizontalVelocity = Vector3.ProjectOnPlane(currentVelocity, Motor.CharacterUp);
@@ -456,34 +460,24 @@ namespace JourneyGator.Player
                 currentVelocity = smoothedHorizontal + Vector3.Project(currentVelocity, Motor.CharacterUp);
             }
 
-            // Vertical — apply a fraction of gravity so descent is slow but not zero
             currentVelocity += Gravity * GlideGravityScale * deltaTime;
 
-            // Clamp downward speed to GlideMaxFallSpeed
             float verticalSpeed = Vector3.Dot(currentVelocity, Motor.CharacterUp);
             if (verticalSpeed < -GlideMaxFallSpeed)
-            {
                 currentVelocity -= Motor.CharacterUp * (verticalSpeed + GlideMaxFallSpeed);
-            }
 
-            // Apply drag normally
             currentVelocity *= 1f / (1f + Drag * deltaTime);
         }
 
-        private void HandleJump(ref Vector3 currentVelocity, float deltaTime)
+        private void HandleJump(ref Vector3 currentVelocity, float deltaTime, bool isGrounded)
         {
             _jumpedThisFrame = false;
             _timeSinceJumpRequested += deltaTime;
 
             if (!_jumpRequested) return;
 
-            bool isGrounded = AllowJumpingWhenSliding
-                ? Motor.GroundingStatus.FoundAnyGround
-                : Motor.GroundingStatus.IsStableOnGround;
-
             bool withinGracePeriod = _timeSinceLastAbleToJump <= JumpPostGroundingGraceTime;
 
-            // ── First jump (ground or grace period) ──────────────────────────
             bool canFirstJump = !_jumpConsumed && (isGrounded || withinGracePeriod);
             if (canFirstJump)
             {
@@ -492,7 +486,6 @@ namespace JourneyGator.Player
                     jumpDirection = Motor.GroundingStatus.GroundNormal;
 
                 Motor.ForceUnground();
-
                 currentVelocity += (jumpDirection * JumpUpSpeed) - Vector3.Project(currentVelocity, Motor.CharacterUp);
                 currentVelocity += _moveInputVector * JumpScalableForwardSpeed;
 
@@ -502,13 +495,10 @@ namespace JourneyGator.Player
                 return;
             }
 
-            // ── Double jump (mid-air, one use per grounding) ─────────────────
             bool canDoubleJump = AllowDoubleJump && !_doubleJumpConsumed && !isGrounded;
             if (canDoubleJump)
             {
                 Motor.ForceUnground();
-
-                // Reset vertical velocity before applying double jump for consistent height
                 currentVelocity -= Vector3.Project(currentVelocity, Motor.CharacterUp);
                 currentVelocity += Motor.CharacterUp * DoubleJumpUpSpeed;
                 currentVelocity += _moveInputVector * JumpScalableForwardSpeed;
@@ -528,25 +518,18 @@ namespace JourneyGator.Player
             }
         }
 
-        private void UpdateJumpState(float deltaTime)
+        private void UpdateJumpState(float deltaTime, bool isGrounded)
         {
-            // Expire pre-ground jump request
             if (_jumpRequested && _timeSinceJumpRequested > JumpPreGroundingGraceTime)
-            {
                 _jumpRequested = false;
-            }
-
-            bool isGrounded = AllowJumpingWhenSliding
-                ? Motor.GroundingStatus.FoundAnyGround
-                : Motor.GroundingStatus.IsStableOnGround;
 
             if (isGrounded)
             {
                 if (!_jumpedThisFrame)
                 {
                     _jumpConsumed = false;
-                    _doubleJumpConsumed = false; // Restore double jump on landing
-                    SetGliding(false);  // Stop gliding on land
+                    _doubleJumpConsumed = false;
+                    SetGliding(false);
                 }
                 _timeSinceLastAbleToJump = 0f;
             }
@@ -575,7 +558,6 @@ namespace JourneyGator.Player
         {
             if (!_isCrouching || _shouldBeCrouching) return;
 
-            // Test if standing height is clear before uncrouching
             Motor.SetCapsuleDimensions(StandingCapsuleRadius, StandingCapsuleHeight, StandingCapsuleHeight * 0.5f);
 
             bool obstructed = Motor.CharacterOverlap(
@@ -586,10 +568,7 @@ namespace JourneyGator.Player
                 QueryTriggerInteraction.Ignore) > 0;
 
             if (obstructed)
-            {
-                // Revert to crouching dimensions
                 Motor.SetCapsuleDimensions(StandingCapsuleRadius, CrouchedCapsuleHeight, CrouchedCapsuleHeight * 0.5f);
-            }
             else
             {
                 MeshRoot.localScale = Vector3.one;
@@ -610,7 +589,6 @@ namespace JourneyGator.Player
                         currentRotation = Quaternion.FromToRotation(currentUp, smoothedDir) * currentRotation;
                         break;
                     }
-
                 case BonusOrientationMethod.TowardsGroundSlopeAndGravity:
                     {
                         if (Motor.GroundingStatus.IsStableOnGround)
@@ -629,8 +607,7 @@ namespace JourneyGator.Player
                         }
                         break;
                     }
-
-                default: // BonusOrientationMethod.None
+                default:
                     {
                         Vector3 smoothedDir = Vector3.Slerp(currentUp, Vector3.up,
                             1f - Mathf.Exp(-BonusOrientationSharpness * deltaTime));
@@ -642,50 +619,51 @@ namespace JourneyGator.Player
 
         // ─── Glide Tilt ──────────────────────────────────────────────────────
 
-        /// <summary>
-        /// Rotates MeshRoot visually during glide:
-        ///   Bank  — rolls left/right based on lateral input (how hard the player is turning).
-        ///   Pitch — tilts forward based on horizontal speed relative to GlideHorizontalSpeed.
-        /// Both tilt out when glide ends, snapping back to neutral over TiltSmoothing.
-        /// This is purely cosmetic — MeshRoot local rotation only, no physics impact.
-        /// </summary>
         private void UpdateGlideTilt(float deltaTime)
         {
+            bool atNeutral = !_isGliding && Mathf.Abs(_currentBank) < 0.01f && Mathf.Abs(_currentPitch) < 0.01f;
+            if (atNeutral)
+            {
+                if (_currentBank != 0f || _currentPitch != 0f)
+                {
+                    _currentBank = 0f;
+                    _currentPitch = 0f;
+                    MeshRoot.localRotation = Quaternion.identity;
+                }
+                return;
+            }
+
             float targetBank = 0f;
             float targetPitch = 0f;
 
             if (_isGliding)
             {
-                // ── Bank (roll) ───────────────────────────────────────────────
-                // Lateral input in local space: -1 = turning left, +1 = turning right.
                 Vector3 localMove = Motor.Transform.InverseTransformDirection(_moveInputVector);
-                float lateralInput = localMove.x;
-                targetBank = -lateralInput * MaxBankAngle;
+                targetBank = -localMove.x * MaxBankAngle;
 
-                // ── Pitch ─────────────────────────────────────────────────────
-                // Map horizontal speed [0 → GlideHorizontalSpeed] to [0 → MaxPitchAngle].
                 Vector3 horizontalVelocity = Vector3.ProjectOnPlane(Motor.Velocity, Motor.CharacterUp);
                 float speedRatio = Mathf.Clamp01(horizontalVelocity.magnitude / GlideHorizontalSpeed);
                 targetPitch = speedRatio * MaxPitchAngle;
             }
 
-            // Smooth the bank and pitch targets independently before composing the rotation.
-            // This prevents the target from jumping instantly when input changes direction,
-            // which is what was causing the tilt to feel abrupt despite the Slerp below.
-            // Use TiltSmoothing while gliding, TiltRecoverySpeed when returning to neutral
-            // Scale normalized slider values [0-1] and [0-2] to useful exp-smoothing ranges
-            float activeSpeed = _isGliding ? TiltSmoothing * 15f : TiltRecoverySpeed * 5f;
+            float activeSpeed = _isGliding ? TiltSmoothing * TiltSmoothingScale : TiltRecoverySpeed * TiltRecoveryScale;
             float smoothFactor = 1f - Mathf.Exp(-activeSpeed * deltaTime);
             _currentBank = Mathf.Lerp(_currentBank, targetBank, smoothFactor);
             _currentPitch = Mathf.Lerp(_currentPitch, targetPitch, smoothFactor);
 
-            // Compose the final rotation and apply to MeshRoot — purely visual, no physics
             MeshRoot.localRotation = Quaternion.Euler(_currentPitch, 0f, _currentBank);
         }
 
         // ─── Ground Event Callbacks ──────────────────────────────────────────
 
-        protected virtual void OnLanded() { }
-        protected virtual void OnLeaveStableGround() { }
+        protected virtual void OnLanded()
+        {
+            OnLandedEvent?.Invoke();
+        }
+
+        protected virtual void OnLeaveStableGround()
+        {
+            OnLeftGroundEvent?.Invoke();
+        }
     }
 }
