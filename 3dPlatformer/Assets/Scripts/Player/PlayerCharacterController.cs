@@ -89,6 +89,8 @@ namespace JourneyGator.Player
         public float GlideMaxFallSpeed = 2f;
         public float GlideHorizontalSpeed = 12f;
         public float GlideEntryMinAirTime = 0.1f;
+        public float GlideAcceleration = 4f;   // How fast horizontal speed ramps UP with input
+        public float GlideDeceleration = 3f;   // How fast player bleeds to float with no input
 
         [Header("Glide Tilt")]
         public float MaxBankAngle = 30f;
@@ -490,18 +492,29 @@ namespace JourneyGator.Player
 
         private void ApplyGlideMovement(ref Vector3 currentVelocity, float deltaTime)
         {
+            Vector3 horizontalVelocity = Vector3.ProjectOnPlane(currentVelocity, Motor.CharacterUp);
+            Vector3 verticalVelocity = Vector3.Project(currentVelocity, Motor.CharacterUp);
+
             if (_moveInputVector.sqrMagnitude > 0f)
             {
-                Vector3 horizontalVelocity = Vector3.ProjectOnPlane(currentVelocity, Motor.CharacterUp);
+                // Directional input — accelerate toward input direction at glide speed
                 Vector3 targetHorizontal = _moveInputVector * GlideHorizontalSpeed;
-                Vector3 smoothedHorizontal = Vector3.Lerp(horizontalVelocity, targetHorizontal,
-                    1f - Mathf.Exp(-StableMovementSharpness * deltaTime));
-
-                currentVelocity = smoothedHorizontal + Vector3.Project(currentVelocity, Motor.CharacterUp);
+                horizontalVelocity = Vector3.Lerp(horizontalVelocity, targetHorizontal,
+                    1f - Mathf.Exp(-GlideAcceleration * deltaTime));
+            }
+            else
+            {
+                // No input — gently bleed horizontal velocity to zero so the player floats
+                horizontalVelocity = Vector3.Lerp(horizontalVelocity, Vector3.zero,
+                    1f - Mathf.Exp(-GlideDeceleration * deltaTime));
             }
 
+            currentVelocity = horizontalVelocity + verticalVelocity;
+
+            // Reduced gravity — slow descent regardless of input
             currentVelocity += Gravity * GlideGravityScale * deltaTime;
 
+            // Cap downward speed
             float verticalSpeed = Vector3.Dot(currentVelocity, Motor.CharacterUp);
             if (verticalSpeed < -GlideMaxFallSpeed)
                 currentVelocity -= Motor.CharacterUp * (verticalSpeed + GlideMaxFallSpeed);

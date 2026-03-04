@@ -24,6 +24,9 @@ namespace JourneyGator.Player
         [Header("Speed Lines VFX")]
         public GameObject SpeedLinesVFX;
 
+        [Header("Gliding Model")]
+        public GameObject GlidingModel; // Gliding visual — enabled while gliding, disabled otherwise
+
         [Header("Sprint FOV")]
         public Camera PlayerCamera;
         public float BaseFOV = 60f;   // Normal field of view
@@ -41,6 +44,9 @@ namespace JourneyGator.Player
         {
             if (SpeedLinesVFX != null)
                 SpeedLinesVFX.SetActive(false);
+
+            if (GlidingModel != null)
+                GlidingModel.SetActive(false);
 
             _targetFOV = BaseFOV;
 
@@ -105,6 +111,9 @@ namespace JourneyGator.Player
         private void HandleGlideChanged(bool isGliding)
         {
             SetSpeedLines(isGliding);
+
+            if (GlidingModel != null)
+                GlidingModel.SetActive(isGliding);
 
             // Glide FOV takes priority over sprint FOV — revert to base (or sprint) when glide ends
             if (isGliding)
