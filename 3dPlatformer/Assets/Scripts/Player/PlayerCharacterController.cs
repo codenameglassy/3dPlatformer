@@ -412,6 +412,21 @@ namespace JourneyGator.Player
         // ─── Gliding ─────────────────────────────────────────────────────────
 
         /// <summary>
+        /// Single point of truth for toggling glide state and its side-effects (VFX, etc).
+        /// Always use this instead of setting _isGliding directly.
+        /// </summary>
+        private void SetGliding(bool gliding)
+        {
+            if (gliding == _isGliding) return;
+
+            _isGliding = gliding;
+
+            if (SpeedLinesVFX != null)
+                SpeedLinesVFX.SetActive(_isGliding);
+        }
+
+
+        /// <summary>
         /// Determines whether the player should enter, stay in, or exit glide.
         /// Glide activates when: airborne + jump held + above minimum air time + not used double jump mid-glide.
         /// </summary>
@@ -421,12 +436,7 @@ namespace JourneyGator.Player
             bool pastEntryDelay = _timeSinceLastAbleToJump >= GlideEntryMinAirTime;
             bool wantsToGlide = AllowGliding && _glideInputHeld && isAirborne && pastEntryDelay;
 
-            if (wantsToGlide != _isGliding)
-            {
-                _isGliding = wantsToGlide;
-                if (SpeedLinesVFX != null)
-                    SpeedLinesVFX.SetActive(_isGliding);
-            }
+            SetGliding(wantsToGlide);
         }
 
         /// <summary>
@@ -536,7 +546,7 @@ namespace JourneyGator.Player
                 {
                     _jumpConsumed = false;
                     _doubleJumpConsumed = false; // Restore double jump on landing
-                    _isGliding = false; // Stop gliding on land
+                    SetGliding(false);  // Stop gliding on land
                 }
                 _timeSinceLastAbleToJump = 0f;
             }
